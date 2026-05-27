@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
@@ -25,6 +26,7 @@ class PdfExportService {
       theme: pw.ThemeData.withFont(base: baseFont, bold: boldFont),
     );
     final groupedItems = _groupItems(items, grouping);
+    final imageAssets = await _loadImageAssets(items);
     final generatedAt = DateTime.now();
 
     document.addPage(
@@ -42,7 +44,7 @@ class PdfExportService {
               pw.SizedBox(height: 10),
               _buildTable(entry.value),
               pw.SizedBox(height: 14),
-              _buildImageCards(entry.value),
+              _buildImageCards(entry.value, imageAssets),
             ],
           ),
         ],
@@ -203,15 +205,21 @@ class PdfExportService {
     );
   }
 
-  pw.Widget _buildImageCards(List<ItemRecord> items) {
+  pw.Widget _buildImageCards(
+    List<ItemRecord> items,
+    Map<String, pw.MemoryImage> imageAssets,
+  ) {
     return pw.Wrap(
       spacing: 12,
       runSpacing: 12,
-      children: items.take(12).map(_buildImageCard).toList(),
+      children: items
+          .take(12)
+          .map((item) => _buildImageCard(item, imageAssets[_imageKey(item)]))
+          .toList(),
     );
   }
 
-  pw.Widget _buildImageCard(ItemRecord item) {
+  pw.Widget _buildImageCard(ItemRecord item, pw.MemoryImage? image) {
     return pw.Container(
       width: 168,
       padding: const pw.EdgeInsets.all(10),
@@ -222,7 +230,7 @@ class PdfExportService {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          _buildPreviewImage(item.imagePath),
+          _buildPreviewImage(image),
           pw.SizedBox(height: 8),
           pw.Text(
             item.name,
@@ -240,11 +248,11 @@ class PdfExportService {
     );
   }
 
-  pw.Widget _buildPreviewImage(String imagePath) {
-    if (imagePath.trim().isEmpty) {
+  pw.Widget _buildPreviewImage(pw.MemoryImage? image) {
+    if (image == null) {
       return pw.Container(
         height: 90,
-        width: double.infinity,
+        width: 148,
         decoration: pw.BoxDecoration(
           color: PdfColor.fromInt(0xFFE8F2EC),
           borderRadius: pw.BorderRadius.circular(12),
@@ -260,22 +268,48 @@ class PdfExportService {
       );
     }
 
-    final file = File(imagePath);
-    if (!file.existsSync()) {
-      return _buildPreviewImage('');
-    }
-
     return pw.ClipRRect(
       horizontalRadius: 12,
       verticalRadius: 12,
-      child: pw.Image(
-        pw.MemoryImage(file.readAsBytesSync()),
-        height: 90,
-        width: double.infinity,
-        fit: pw.BoxFit.cover,
-      ),
+      child: pw.Image(image, height: 90, width: 148, fit: pw.BoxFit.cover),
     );
   }
+
+  Future<Map<String, pw.MemoryImage>> _loadImageAssets(
+    List<ItemRecord> items,
+  ) async {
+    final result = <String, pw.MemoryImage>{};
+    for (final item in items) {
+      final key = _imageKey(item);
+      if (key.isEmpty || result.containsKey(key)) {
+        continue;
+      }
+
+      final bytes = await _readImageBytes(key);
+      if (bytes == null) {
+        continue;
+      }
+      result[key] = pw.MemoryImage(bytes);
+    }
+    return result;
+  }
+
+  Future<Uint8List?> _readImageBytes(String imagePath) async {
+    try {
+      final file = File(imagePath);
+      if (!await file.exists()) {
+        return null;
+      }
+      final bytes = await file.readAsBytes();
+      return bytes.isEmpty ? null : bytes;
+    } on FileSystemException {
+      return null;
+    } on ArgumentError {
+      return null;
+    }
+  }
+
+  String _imageKey(ItemRecord item) => item.imagePath.trim();
 
   Map<String, List<ItemRecord>> _groupItems(
     List<ItemRecord> items,
