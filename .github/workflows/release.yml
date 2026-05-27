@@ -1,0 +1,64 @@
+name: Build Android Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Build split APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: dart analyze lib
+
+      - name: Build split APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          RELEASE_NOTES="docs/releases/${GITHUB_REF_NAME}.md"
+          if [[ ! -f "${RELEASE_NOTES}" ]]; then
+            RELEASE_NOTES="docs/releases/v1.0.0.md"
+          fi
+          mkdir -p release-assets
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "release-assets/icheck-v${VERSION}-arm64-v8a.apk"
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "release-assets/icheck-v${VERSION}-armeabi-v7a.apk"
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk "release-assets/icheck-v${VERSION}-x86_64.apk"
+          cd release-assets
+          sha256sum *.apk > SHA256SUMS.txt
+          echo "release_notes=${RELEASE_NOTES}" >> "${GITHUB_ENV}"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: icheck-android-release
+          path: release-assets/*
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: ${{ env.release_notes }}
+          files: release-assets/*
