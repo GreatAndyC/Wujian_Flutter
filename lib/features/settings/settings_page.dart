@@ -20,7 +20,6 @@ class _SettingsPageState extends State<SettingsPage> {
   TextEditingController? _modelController;
   TextEditingController? _promptController;
   String? _boundProfileId;
-  bool _autoSave = true;
 
   @override
   void dispose() {
@@ -143,13 +142,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         const SizedBox(height: 8),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          value: _autoSave,
-          onChanged: (value) => setState(() => _autoSave = value),
-          title: const Text('单张拍摄后立即进入确认'),
-          subtitle: const Text('关闭后，单张拍摄结果也会先进入待确认队列。'),
-        ),
+        const _CaptureFlowNote(),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -197,7 +190,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _promptController = TextEditingController(
       text: profile.settings.customPrompt,
     );
-    _autoSave = profile.settings.autoSave;
   }
 
   Future<void> _createProfile() async {
@@ -250,7 +242,6 @@ class _SettingsPageState extends State<SettingsPage> {
       apiKey: _apiKeyController!.text.trim(),
       model: _modelController!.text.trim(),
       customPrompt: _promptController!.text.trim(),
-      autoSave: _autoSave,
     );
     await controller.saveProfile(
       profileId: controller.activeProfile.id,
@@ -362,6 +353,45 @@ class _StorageSection extends StatelessWidget {
     }
     final gb = mb / 1024;
     return '${gb.toStringAsFixed(2)} GB';
+  }
+}
+
+class _CaptureFlowNote extends StatelessWidget {
+  const _CaptureFlowNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.task_alt_outlined,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '拍摄后自动进入后台识别',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '单张和连续拍摄都会先加入待确认队列，识别完成后再统一确认入库。',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

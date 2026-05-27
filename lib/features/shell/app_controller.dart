@@ -231,12 +231,22 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<ItemRecord?> captureAndRecognizeSingle() async {
+  Future<void> captureSingleToQueue() async {
     final photo = await _pickPhoto();
     if (photo == null) {
-      return null;
+      return;
     }
-    return _recognizeDraftFromPhoto(photo);
+
+    try {
+      final draft = await _createQueuedDraft(photo);
+      await enqueuePendingItem(draft);
+      _message = '已加入后台识别队列';
+      notifyListeners();
+      unawaited(_processPendingQueue());
+    } catch (error) {
+      _message = error.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+    }
   }
 
   Future<void> startContinuousCapture() async {
@@ -348,27 +358,6 @@ class AppController extends ChangeNotifier {
       );
     }, keepBusyState: true);
     return photo;
-  }
-
-  Future<ItemRecord?> _recognizeDraftFromPhoto(XFile photo) async {
-    final draft = await _createQueuedDraft(photo);
-    ItemRecord? ready;
-    await _runBusy(() async {
-      final bytes = await File(draft.imagePath).readAsBytes();
-      final recognition = await _recognitionRepository.recognizeItem(
-        settings: settings,
-        imageBytes: bytes,
-        mimeType: _detectMimeType(draft.imagePath),
-      );
-      _applyUsage(recognition);
-      ready = recognition.toItem(
-        id: draft.id,
-        imagePath: draft.imagePath,
-        now: DateTime.now(),
-      );
-      _message = settings.isConfigured ? '识别完成' : '已生成待确认记录';
-    }, keepBusyState: true);
-    return ready;
   }
 
   Future<ItemRecord> _createQueuedDraft(XFile photo) async {

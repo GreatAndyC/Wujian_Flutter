@@ -214,45 +214,7 @@ class HomePage extends StatelessWidget {
 
   Future<void> _captureSingle(BuildContext context) async {
     final controller = AppScope.of(context);
-    final draft = await controller.captureAndRecognizeSingle();
-    if (!context.mounted || draft == null) {
-      return;
-    }
-
-    if (!controller.settings.autoSave) {
-      await controller.enqueuePendingItem(
-        draft.copyWith(
-          queueState: QueueRecognitionState.ready,
-          updatedAt: DateTime.now(),
-        ),
-      );
-      return;
-    }
-
-    final saved = await showModalBottomSheet<ItemRecord>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ItemEditorSheet(
-        initialItem: draft,
-        title: '确认识别结果',
-        submitLabel: '确认并入库',
-      ),
-    );
-
-    if (saved != null) {
-      await controller.saveItem(saved);
-      if (context.mounted) {
-        controller.setCurrentIndex(1);
-      }
-    } else {
-      await controller.enqueuePendingItem(
-        draft.copyWith(
-          queueState: QueueRecognitionState.ready,
-          updatedAt: DateTime.now(),
-        ),
-      );
-    }
+    await controller.captureSingleToQueue();
   }
 }
 

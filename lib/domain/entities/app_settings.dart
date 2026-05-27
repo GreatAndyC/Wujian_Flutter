@@ -4,7 +4,6 @@ class AppSettings {
     required this.apiKey,
     required this.model,
     required this.customPrompt,
-    required this.autoSave,
   });
 
   factory AppSettings.initial() {
@@ -13,7 +12,6 @@ class AppSettings {
       apiKey: '',
       model: 'doubao-seed-2-0-mini-260428',
       customPrompt: '',
-      autoSave: true,
     );
   }
 
@@ -21,7 +19,6 @@ class AppSettings {
   final String apiKey;
   final String model;
   final String customPrompt;
-  final bool autoSave;
 
   bool get isConfigured =>
       baseUrl.trim().isNotEmpty &&
@@ -33,24 +30,17 @@ class AppSettings {
     String? apiKey,
     String? model,
     String? customPrompt,
-    bool? autoSave,
   }) {
     return AppSettings(
       baseUrl: baseUrl ?? this.baseUrl,
       apiKey: apiKey ?? this.apiKey,
       model: model ?? this.model,
       customPrompt: customPrompt ?? this.customPrompt,
-      autoSave: autoSave ?? this.autoSave,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'baseUrl': baseUrl,
-      'model': model,
-      'customPrompt': customPrompt,
-      'autoSave': autoSave,
-    };
+    return {'baseUrl': baseUrl, 'model': model, 'customPrompt': customPrompt};
   }
 
   factory AppSettings.fromJson(
@@ -62,7 +52,6 @@ class AppSettings {
       apiKey: apiKey,
       model: json['model'] as String? ?? AppSettings.initial().model,
       customPrompt: json['customPrompt'] as String? ?? '',
-      autoSave: json['autoSave'] as bool? ?? true,
     );
   }
 }
