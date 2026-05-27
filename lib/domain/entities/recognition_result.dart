@@ -16,6 +16,9 @@ class RecognitionResult {
     required this.notes,
     required this.status,
     required this.rawResponse,
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.totalTokens,
   });
 
   final String name;
@@ -32,6 +35,9 @@ class RecognitionResult {
   final String notes;
   final ItemStatus status;
   final String rawResponse;
+  final int promptTokens;
+  final int completionTokens;
+  final int totalTokens;
 
   ItemRecord toItem({
     required String id,
@@ -59,6 +65,8 @@ class RecognitionResult {
       material: material,
       createdAt: now,
       updatedAt: now,
+      queueState: QueueRecognitionState.ready,
+      recognitionError: '',
     );
   }
 }

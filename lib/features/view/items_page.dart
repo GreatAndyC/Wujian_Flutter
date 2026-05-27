@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_theme.dart';
+import '../../domain/entities/export_grouping.dart';
 import '../../domain/entities/item_record.dart';
 import '../items/item_detail_page.dart';
 import '../shell/app_scope.dart';
@@ -33,7 +34,8 @@ class _ItemsPageState extends State<ItemsPage> {
           query.isEmpty ||
           item.name.toLowerCase().contains(query) ||
           item.category.toLowerCase().contains(query) ||
-          item.room.toLowerCase().contains(query);
+          item.room.toLowerCase().contains(query) ||
+          item.box.toLowerCase().contains(query);
       return matchesCategory && matchesQuery;
     }).toList();
 
@@ -46,17 +48,33 @@ class _ItemsPageState extends State<ItemsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('视图', style: Theme.of(context).textTheme.headlineSmall),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '视图',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: controller.isBusy
+                          ? null
+                          : () => _showExportSheet(context, filtered),
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      label: const Text('导出 PDF'),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Text(
-                  '按分类、名称、房间快速查看已经确认入库的物品。',
+                  '按分类、名称、房间快速查看已经确认入库的物品，并导出当前结果。',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 18),
                 TextField(
                   onChanged: (value) => setState(() => _query = value),
                   decoration: const InputDecoration(
-                    hintText: '搜索名称、分类或房间',
+                    hintText: '搜索名称、分类、房间或箱号',
                     prefixIcon: Icon(Icons.search),
                   ),
                 ),
@@ -101,6 +119,41 @@ class _ItemsPageState extends State<ItemsPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _showExportSheet(
+    BuildContext context,
+    List<ItemRecord> items,
+  ) async {
+    final controller = AppScope.of(context);
+    final grouping = await showModalBottomSheet<ExportGrouping>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('按分类导出'),
+              subtitle: const Text('适合按厨房、数码、家具等类别整理'),
+              leading: const Icon(Icons.category_outlined),
+              onTap: () => Navigator.of(context).pop(ExportGrouping.category),
+            ),
+            ListTile(
+              title: const Text('按箱子导出'),
+              subtitle: const Text('适合搬家时按箱号做装箱清单'),
+              leading: const Icon(Icons.inventory_2_outlined),
+              onTap: () => Navigator.of(context).pop(ExportGrouping.box),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (grouping == null || !context.mounted) {
+      return;
+    }
+    await controller.exportItemsReport(items: items, grouping: grouping);
   }
 }
 

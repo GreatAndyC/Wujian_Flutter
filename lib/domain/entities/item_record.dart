@@ -9,6 +9,17 @@ enum ItemStatus {
   final String label;
 }
 
+enum QueueRecognitionState {
+  queued('排队中'),
+  processing('识别中'),
+  ready('可确认'),
+  failed('识别失败');
+
+  const QueueRecognitionState(this.label);
+
+  final String label;
+}
+
 class ItemRecord {
   const ItemRecord({
     required this.id,
@@ -28,6 +39,8 @@ class ItemRecord {
     required this.material,
     required this.createdAt,
     required this.updatedAt,
+    this.queueState = QueueRecognitionState.ready,
+    this.recognitionError = '',
   });
 
   final String id;
@@ -47,6 +60,8 @@ class ItemRecord {
   final String material;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final QueueRecognitionState queueState;
+  final String recognitionError;
 
   ItemRecord copyWith({
     String? id,
@@ -66,6 +81,8 @@ class ItemRecord {
     String? material,
     DateTime? createdAt,
     DateTime? updatedAt,
+    QueueRecognitionState? queueState,
+    String? recognitionError,
   }) {
     return ItemRecord(
       id: id ?? this.id,
@@ -85,6 +102,8 @@ class ItemRecord {
       material: material ?? this.material,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      queueState: queueState ?? this.queueState,
+      recognitionError: recognitionError ?? this.recognitionError,
     );
   }
 
@@ -116,6 +135,11 @@ class ItemRecord {
       updatedAt:
           DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
           DateTime.now(),
+      queueState: QueueRecognitionState.values.firstWhere(
+        (value) => value.name == json['queueState'],
+        orElse: () => QueueRecognitionState.ready,
+      ),
+      recognitionError: json['recognitionError'] as String? ?? '',
     );
   }
 
@@ -138,6 +162,8 @@ class ItemRecord {
       'material': material,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      'queueState': queueState.name,
+      'recognitionError': recognitionError,
     };
   }
 }

@@ -60,7 +60,7 @@ class HomePage extends StatelessWidget {
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        '先拍下来，\n稍后统一确认入库。',
+                        '先拍下来，\n后台自动识别。',
                         style: Theme.of(
                           context,
                         ).textTheme.displaySmall?.copyWith(color: Colors.white),
@@ -68,8 +68,8 @@ class HomePage extends StatelessWidget {
                       const SizedBox(height: 12),
                       Text(
                         controller.settings.isConfigured
-                            ? '当前配置会自动识别物品，并将结果放入待确认队列。'
-                            : '当前还没配置 API。你仍然可以拍照，结果会以待确认记录进入队列。',
+                            ? '连续拍照时，照片会立即进入队列，后台继续识别，不阻塞下一张。'
+                            : '还没配置 API。你仍然可以拍照，结果会先进队列，之后手动补充。',
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: Colors.white.withValues(alpha: 0.86),
                         ),
@@ -98,9 +98,7 @@ class HomePage extends StatelessWidget {
                           const SizedBox(width: 12),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed:
-                                  controller.isBusy ||
-                                      controller.isContinuousCapturing
+                              onPressed: controller.isContinuousCapturing
                                   ? null
                                   : controller.startContinuousCapture,
                               style: OutlinedButton.styleFrom(
@@ -165,7 +163,9 @@ class HomePage extends StatelessWidget {
                 Text('待确认队列', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
                 Text(
-                  '连续拍照后的识别结果会先进入这里，点开后再确认保存。',
+                  controller.isProcessingQueue
+                      ? '后台正在识别队列中的照片，你可以继续拍。'
+                      : '点开可确认的条目后再入库。',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ],
@@ -220,7 +220,12 @@ class HomePage extends StatelessWidget {
     }
 
     if (!controller.settings.autoSave) {
-      await controller.enqueuePendingItem(draft);
+      await controller.enqueuePendingItem(
+        draft.copyWith(
+          queueState: QueueRecognitionState.ready,
+          updatedAt: DateTime.now(),
+        ),
+      );
       return;
     }
 
@@ -241,7 +246,12 @@ class HomePage extends StatelessWidget {
         controller.setCurrentIndex(1);
       }
     } else {
-      await controller.enqueuePendingItem(draft);
+      await controller.enqueuePendingItem(
+        draft.copyWith(
+          queueState: QueueRecognitionState.ready,
+          updatedAt: DateTime.now(),
+        ),
+      );
     }
   }
 }
@@ -324,6 +334,10 @@ class _PendingItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    final canConfirm =
+        item.queueState == QueueRecognitionState.ready ||
+        item.queueState == QueueRecognitionState.failed;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -338,12 +352,14 @@ class _PendingItemCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
-                Chip(label: Text(item.category)),
+                Chip(label: Text(item.queueState.label)),
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              item.description,
+              item.recognitionError.trim().isNotEmpty
+                  ? item.recognitionError
+                  : item.description,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodyMedium,
@@ -353,22 +369,30 @@ class _PendingItemCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: FilledButton(
-                    onPressed: () async {
-                      final saved = await showModalBottomSheet<ItemRecord>(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: Colors.transparent,
-                        builder: (_) => ItemEditorSheet(
-                          initialItem: item,
-                          title: '确认队列项目',
-                          submitLabel: '确认入库',
-                        ),
-                      );
-                      if (saved != null) {
-                        await controller.confirmPendingItem(saved);
-                      }
-                    },
-                    child: const Text('确认'),
+                    onPressed: !canConfirm
+                        ? null
+                        : () async {
+                            final saved =
+                                await showModalBottomSheet<ItemRecord>(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) => ItemEditorSheet(
+                                    initialItem: item,
+                                    title: '确认队列项目',
+                                    submitLabel: '确认入库',
+                                  ),
+                                );
+                            if (saved != null) {
+                              await controller.confirmPendingItem(
+                                saved.copyWith(
+                                  queueState: QueueRecognitionState.ready,
+                                  recognitionError: '',
+                                ),
+                              );
+                            }
+                          },
+                    child: Text(canConfirm ? '确认' : '识别中'),
                   ),
                 ),
                 const SizedBox(width: 12),

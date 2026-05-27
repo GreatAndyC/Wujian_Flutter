@@ -1,18 +1,24 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../data/services/pdf_export_service.dart';
 import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/app_settings_profile.dart';
 import '../../domain/entities/app_settings_store.dart';
+import '../../domain/entities/export_grouping.dart';
 import '../../domain/entities/item_record.dart';
 import '../../domain/entities/recognition_result.dart';
+import '../../domain/entities/token_usage_stats.dart';
 import '../../domain/repositories/item_repository.dart';
 import '../../domain/repositories/pending_queue_repository.dart';
 import '../../domain/repositories/recognition_repository.dart';
 import '../../domain/repositories/settings_repository.dart';
+import '../../domain/repositories/token_usage_repository.dart';
 
 class AppController extends ChangeNotifier {
   AppController({
@@ -20,24 +26,32 @@ class AppController extends ChangeNotifier {
     required ItemRepository itemRepository,
     required PendingQueueRepository pendingQueueRepository,
     required RecognitionRepository recognitionRepository,
+    required TokenUsageRepository tokenUsageRepository,
+    required PdfExportService pdfExportService,
   }) : _settingsRepository = settingsRepository,
        _itemRepository = itemRepository,
        _pendingQueueRepository = pendingQueueRepository,
-       _recognitionRepository = recognitionRepository;
+       _recognitionRepository = recognitionRepository,
+       _tokenUsageRepository = tokenUsageRepository,
+       _pdfExportService = pdfExportService;
 
   final SettingsRepository _settingsRepository;
   final ItemRepository _itemRepository;
   final PendingQueueRepository _pendingQueueRepository;
   final RecognitionRepository _recognitionRepository;
+  final TokenUsageRepository _tokenUsageRepository;
+  final PdfExportService _pdfExportService;
   final ImagePicker _picker = ImagePicker();
 
   AppSettingsStore _settingsStore = AppSettingsStore.initial();
   List<ItemRecord> _items = const [];
   List<ItemRecord> _pendingQueue = const [];
+  Map<String, TokenUsageStats> _usageStatsByProfileId = {};
   int _currentIndex = 0;
   bool _isReady = false;
   bool _isBusy = false;
   bool _isContinuousCapturing = false;
+  bool _isProcessingQueue = false;
   String? _message;
   File? _latestImage;
 
@@ -50,15 +64,43 @@ class AppController extends ChangeNotifier {
   bool get isReady => _isReady;
   bool get isBusy => _isBusy;
   bool get isContinuousCapturing => _isContinuousCapturing;
+  bool get isProcessingQueue => _isProcessingQueue;
   String? get message => _message;
   File? get latestImage => _latestImage;
+  TokenUsageStats get activeUsageStats =>
+      _usageStatsByProfileId[activeProfile.id] ?? TokenUsageStats.empty();
+  TokenUsageStats get overallUsageStats {
+    var requestCount = 0;
+    var promptTokens = 0;
+    var completionTokens = 0;
+    var totalTokens = 0;
+    var lastUpdatedAt = '';
+    for (final stats in _usageStatsByProfileId.values) {
+      requestCount += stats.requestCount;
+      promptTokens += stats.promptTokens;
+      completionTokens += stats.completionTokens;
+      totalTokens += stats.totalTokens;
+      if (stats.lastUpdatedAt.compareTo(lastUpdatedAt) > 0) {
+        lastUpdatedAt = stats.lastUpdatedAt;
+      }
+    }
+    return TokenUsageStats(
+      requestCount: requestCount,
+      promptTokens: promptTokens,
+      completionTokens: completionTokens,
+      totalTokens: totalTokens,
+      lastUpdatedAt: lastUpdatedAt,
+    );
+  }
 
   Future<void> initialize() async {
     _settingsStore = await _settingsRepository.loadSettingsStore();
     _items = await _itemRepository.loadItems();
     _pendingQueue = await _pendingQueueRepository.loadPendingItems();
+    _usageStatsByProfileId = await _tokenUsageRepository.loadUsageStats();
     _isReady = true;
     notifyListeners();
+    unawaited(_processPendingQueue());
   }
 
   void setCurrentIndex(int value) {
@@ -133,23 +175,38 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  Future<void> exportItemsReport({
+    required List<ItemRecord> items,
+    required ExportGrouping grouping,
+  }) async {
+    if (items.isEmpty) {
+      _message = '当前没有可导出的物品';
+      notifyListeners();
+      return;
+    }
+
+    await _runBusy(() async {
+      final file = await _pdfExportService.exportItems(
+        items: items,
+        grouping: grouping,
+      );
+      _message = 'PDF 已导出';
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: '物见导出清单 · ${grouping.label}',
+          subject: '物见导出清单',
+        ),
+      );
+    });
+  }
+
   Future<ItemRecord?> captureAndRecognizeSingle() async {
     final photo = await _pickPhoto();
     if (photo == null) {
       return null;
     }
-
     return _recognizeDraftFromPhoto(photo);
-  }
-
-  Future<void> captureToQueue() async {
-    final draft = await captureAndRecognizeSingle();
-    if (draft == null) {
-      return;
-    }
-    await enqueuePendingItem(draft);
-    _message = '已加入待确认队列';
-    notifyListeners();
   }
 
   Future<void> startContinuousCapture() async {
@@ -168,16 +225,14 @@ class AppController extends ChangeNotifier {
         if (photo == null) {
           break;
         }
-        final draft = await _recognizeDraftFromPhoto(photo);
-        if (draft == null) {
-          continue;
-        }
-        await enqueuePendingItem(draft, notify: false);
+        final draft = await _createQueuedDraft(photo);
+        await enqueuePendingItem(draft);
+        unawaited(_processPendingQueue());
         capturedCount++;
       }
       _message = capturedCount == 0
           ? '已结束连续拍照'
-          : '连续拍照完成，新增 $capturedCount 条待确认记录';
+          : '连续拍照完成，已加入 $capturedCount 条待确认记录';
     } catch (error) {
       _message = error.toString().replaceFirst('Exception: ', '');
     } finally {
@@ -250,31 +305,142 @@ class AppController extends ChangeNotifier {
   }
 
   Future<ItemRecord?> _recognizeDraftFromPhoto(XFile photo) async {
+    final draft = await _createQueuedDraft(photo);
+    ItemRecord? ready;
+    await _runBusy(() async {
+      final bytes = await File(draft.imagePath).readAsBytes();
+      final recognition = await _recognitionRepository.recognizeItem(
+        settings: settings,
+        imageBytes: bytes,
+        mimeType: _detectMimeType(draft.imagePath),
+      );
+      _applyUsage(recognition);
+      ready = recognition.toItem(
+        id: draft.id,
+        imagePath: draft.imagePath,
+        now: DateTime.now(),
+      );
+      _message = settings.isConfigured ? '识别完成' : '已生成待确认记录';
+    }, keepBusyState: true);
+    return ready;
+  }
+
+  Future<ItemRecord> _createQueuedDraft(XFile photo) async {
     final imageFile = await _persistImage(File(photo.path));
     _latestImage = imageFile;
     notifyListeners();
 
-    ItemRecord? draft;
-    await _runBusy(() async {
-      final bytes = await imageFile.readAsBytes();
-      final recognition = await _recognitionRepository.recognizeItem(
-        settings: settings,
-        imageBytes: bytes,
-        mimeType: _detectMimeType(imageFile.path),
-      );
-      draft = _createDraft(recognition, imageFile.path);
-      _message = settings.isConfigured ? '识别完成' : '尚未配置 API，已生成待确认记录';
-    }, keepBusyState: true);
-    return draft;
+    final now = DateTime.now();
+    return ItemRecord(
+      id: now.microsecondsSinceEpoch.toString(),
+      name: '待识别物品',
+      category: '待分类',
+      quantity: 1,
+      status: ItemStatus.pending,
+      imagePath: imageFile.path,
+      description: '等待后台识别',
+      parameters: const {'识别状态': '排队中'},
+      notes: '',
+      room: '',
+      box: '',
+      brand: '',
+      model: '',
+      color: '',
+      material: '',
+      createdAt: now,
+      updatedAt: now,
+      queueState: QueueRecognitionState.queued,
+      recognitionError: '',
+    );
   }
 
-  ItemRecord _createDraft(RecognitionResult recognition, String imagePath) {
-    final now = DateTime.now();
-    return recognition.toItem(
-      id: now.microsecondsSinceEpoch.toString(),
-      imagePath: imagePath,
-      now: now,
+  Future<void> _processPendingQueue() async {
+    if (_isProcessingQueue) {
+      return;
+    }
+    _isProcessingQueue = true;
+    notifyListeners();
+
+    try {
+      while (true) {
+        final nextIndex = _pendingQueue.indexWhere(
+          (item) => item.queueState == QueueRecognitionState.queued,
+        );
+        if (nextIndex < 0) {
+          break;
+        }
+
+        final queued = _pendingQueue[nextIndex];
+        await _replacePendingItem(
+          queued.copyWith(
+            queueState: QueueRecognitionState.processing,
+            description: '正在后台识别',
+            parameters: {...queued.parameters, '识别状态': '识别中'},
+            updatedAt: DateTime.now(),
+          ),
+        );
+
+        try {
+          final bytes = await File(queued.imagePath).readAsBytes();
+          final recognition = await _recognitionRepository.recognizeItem(
+            settings: settings,
+            imageBytes: bytes,
+            mimeType: _detectMimeType(queued.imagePath),
+          );
+          _applyUsage(recognition);
+          final recognized = recognition.toItem(
+            id: queued.id,
+            imagePath: queued.imagePath,
+            now: DateTime.now(),
+          );
+          await _replacePendingItem(
+            recognized.copyWith(
+              queueState: QueueRecognitionState.ready,
+              recognitionError: '',
+              updatedAt: DateTime.now(),
+            ),
+          );
+        } catch (error) {
+          await _replacePendingItem(
+            queued.copyWith(
+              queueState: QueueRecognitionState.failed,
+              description: '识别失败，请稍后重试或手动补充',
+              recognitionError: error.toString().replaceFirst(
+                'Exception: ',
+                '',
+              ),
+              parameters: {...queued.parameters, '识别状态': '识别失败'},
+              updatedAt: DateTime.now(),
+            ),
+          );
+        }
+      }
+    } finally {
+      _isProcessingQueue = false;
+      notifyListeners();
+    }
+  }
+
+  void _applyUsage(RecognitionResult recognition) {
+    final profileId = activeProfile.id;
+    final current =
+        _usageStatsByProfileId[profileId] ?? TokenUsageStats.empty();
+    _usageStatsByProfileId[profileId] = current.add(
+      promptTokens: recognition.promptTokens,
+      completionTokens: recognition.completionTokens,
+      totalTokens: recognition.totalTokens,
     );
+    unawaited(_tokenUsageRepository.saveUsageStats(_usageStatsByProfileId));
+  }
+
+  Future<void> _replacePendingItem(ItemRecord item) async {
+    _pendingQueue =
+        _pendingQueue
+            .map((entry) => entry.id == item.id ? item : entry)
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    await _pendingQueueRepository.savePendingItems(_pendingQueue);
+    notifyListeners();
   }
 
   Future<File> _persistImage(File source) async {

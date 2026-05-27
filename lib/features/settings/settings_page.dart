@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/app_settings_profile.dart';
+import '../../domain/entities/token_usage_stats.dart';
 import '../shell/app_scope.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -42,8 +43,14 @@ class _SettingsPageState extends State<SettingsPage> {
         Text('设置', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(
-          '可以保存多套火山方舟配置，并在拍照前快速切换当前使用的模型。',
+          '可以保存多套火山方舟配置，并查看当前配置的 token 消耗情况。',
           style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 18),
+        _UsageSection(
+          activeStats: controller.activeUsageStats,
+          overallStats: controller.overallUsageStats,
+          activeProfileName: controller.activeProfile.name,
         ),
         const SizedBox(height: 18),
         DropdownButtonFormField<String>(
@@ -162,23 +169,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('当前默认值', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                Text(
-                  '默认模型已经切到 doubao-seed-2-0-mini-260428。\n连续拍照始终进入待确认队列，适合先批量采集、后统一校对。',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -263,5 +253,102 @@ class _SettingsPageState extends State<SettingsPage> {
     if (showFeedback && context.mounted) {
       FocusScope.of(context).unfocus();
     }
+  }
+}
+
+class _UsageSection extends StatelessWidget {
+  const _UsageSection({
+    required this.activeStats,
+    required this.overallStats,
+    required this.activeProfileName,
+  });
+
+  final TokenUsageStats activeStats;
+  final TokenUsageStats overallStats;
+  final String activeProfileName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Token 统计', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _UsageCard(
+                title: activeProfileName,
+                subtitle: '当前配置累计',
+                stats: activeStats,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _UsageCard(
+                title: '全部配置',
+                subtitle: '总累计',
+                stats: overallStats,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _UsageCard extends StatelessWidget {
+  const _UsageCard({
+    required this.title,
+    required this.subtitle,
+    required this.stats,
+  });
+
+  final String title;
+  final String subtitle;
+  final TokenUsageStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 14),
+            _MetricRow(label: '请求数', value: '${stats.requestCount}'),
+            _MetricRow(label: 'Prompt', value: '${stats.promptTokens}'),
+            _MetricRow(label: 'Completion', value: '${stats.completionTokens}'),
+            _MetricRow(label: 'Total', value: '${stats.totalTokens}'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+        ],
+      ),
+    );
   }
 }

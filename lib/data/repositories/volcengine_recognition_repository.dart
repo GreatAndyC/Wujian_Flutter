@@ -61,27 +61,28 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
         ? _defaultPrompt
         : '${settings.customPrompt.trim()}\n\n$_defaultPrompt';
 
-    final body = {
-      'model': settings.model,
-      'temperature': 0.2,
-      'messages': [
-        {
-          'role': 'user',
-          'content': [
-            {'type': 'text', 'text': prompt},
-            {
-              'type': 'image_url',
-              'image_url': {
-                'url': 'data:$mimeType;base64,${base64Encode(imageBytes)}',
-                'detail': 'high',
+    request.write(
+      jsonEncode({
+        'model': settings.model,
+        'temperature': 0.2,
+        'messages': [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'text', 'text': prompt},
+              {
+                'type': 'image_url',
+                'image_url': {
+                  'url': 'data:$mimeType;base64,${base64Encode(imageBytes)}',
+                  'detail': 'high',
+                },
               },
-            },
-          ],
-        },
-      ],
-    };
+            ],
+          },
+        ],
+      }),
+    );
 
-    request.write(jsonEncode(body));
     final response = await request.close();
     final responseBody = await response.transform(utf8.decoder).join();
     client.close();
@@ -96,6 +97,7 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
       throw const FormatException('识别响应为空');
     }
 
+    final usage = decoded['usage'] as Map<String, dynamic>? ?? const {};
     final message =
         choices.first['message'] as Map<String, dynamic>? ?? const {};
     final content = message['content'];
@@ -115,7 +117,7 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
       throw const FormatException('识别响应缺少内容');
     }
 
-    return _parseResult(text);
+    return _parseResult(text, usage);
   }
 
   @override
@@ -156,7 +158,7 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
     }
   }
 
-  RecognitionResult _parseResult(String rawText) {
+  RecognitionResult _parseResult(String rawText, Map<String, dynamic> usage) {
     final normalized = rawText
         .replaceAll('```json', '')
         .replaceAll('```', '')
@@ -186,6 +188,9 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
         orElse: () => ItemStatus.pending,
       ),
       rawResponse: normalized,
+      promptTokens: (usage['prompt_tokens'] as num?)?.toInt() ?? 0,
+      completionTokens: (usage['completion_tokens'] as num?)?.toInt() ?? 0,
+      totalTokens: (usage['total_tokens'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -205,6 +210,9 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
       notes: '前往设置页填写 API 信息后，可启用图片识别。',
       status: ItemStatus.pending,
       rawResponse: '',
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
     );
   }
 }

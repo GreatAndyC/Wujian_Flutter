@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../data/repositories/local_item_repository.dart';
 import '../data/repositories/local_pending_queue_repository.dart';
 import '../data/repositories/local_settings_repository.dart';
+import '../data/repositories/local_token_usage_repository.dart';
 import '../data/repositories/volcengine_recognition_repository.dart';
+import '../data/services/pdf_export_service.dart';
 import '../features/shell/app_controller.dart';
 import '../features/shell/app_scope.dart';
 import '../features/shell/main_shell.dart';
@@ -20,6 +22,8 @@ class WujianApp extends StatelessWidget {
       itemRepository: LocalItemRepository(),
       pendingQueueRepository: LocalPendingQueueRepository(),
       recognitionRepository: VolcengineRecognitionRepository(),
+      tokenUsageRepository: LocalTokenUsageRepository(),
+      pdfExportService: PdfExportService(),
     );
     await controller.initialize();
     return WujianApp(controller: controller);
