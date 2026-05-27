@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_theme.dart';
+import '../../domain/entities/export_format.dart';
 import '../../domain/entities/export_grouping.dart';
 import '../../domain/entities/item_record.dart';
 import '../items/item_detail_page.dart';
@@ -60,8 +61,8 @@ class _ItemsPageState extends State<ItemsPage> {
                       onPressed: controller.isBusy
                           ? null
                           : () => _showExportSheet(context, filtered),
-                      icon: const Icon(Icons.picture_as_pdf_outlined),
-                      label: const Text('导出 PDF'),
+                      icon: const Icon(Icons.ios_share_outlined),
+                      label: const Text('导出'),
                     ),
                   ],
                 ),
@@ -126,35 +127,59 @@ class _ItemsPageState extends State<ItemsPage> {
     List<ItemRecord> items,
   ) async {
     final controller = AppScope.of(context);
-    final grouping = await showModalBottomSheet<ExportGrouping>(
+    final choice = await showModalBottomSheet<_ExportChoice>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              title: const Text('按分类导出'),
-              subtitle: const Text('适合按厨房、数码、家具等类别整理'),
-              leading: const Icon(Icons.category_outlined),
-              onTap: () => Navigator.of(context).pop(ExportGrouping.category),
-            ),
-            ListTile(
-              title: const Text('按箱子导出'),
-              subtitle: const Text('适合搬家时按箱号做装箱清单'),
-              leading: const Icon(Icons.inventory_2_outlined),
-              onTap: () => Navigator.of(context).pop(ExportGrouping.box),
-            ),
+            for (final format in ExportFormat.values)
+              for (final grouping in ExportGrouping.values)
+                ListTile(
+                  leading: Icon(_iconForFormat(format)),
+                  title: Text('${format.label} · ${grouping.label}'),
+                  subtitle: Text(_subtitleFor(grouping)),
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pop(_ExportChoice(format: format, grouping: grouping)),
+                ),
           ],
         ),
       ),
     );
 
-    if (grouping == null || !context.mounted) {
+    if (choice == null || !context.mounted) {
       return;
     }
-    await controller.exportItemsReport(items: items, grouping: grouping);
+    await controller.exportItems(
+      items: items,
+      grouping: choice.grouping,
+      format: choice.format,
+    );
   }
+
+  IconData _iconForFormat(ExportFormat format) {
+    return switch (format) {
+      ExportFormat.pdf => Icons.picture_as_pdf_outlined,
+      ExportFormat.excel => Icons.table_chart_outlined,
+      ExportFormat.markdown => Icons.notes_outlined,
+    };
+  }
+
+  String _subtitleFor(ExportGrouping grouping) {
+    return switch (grouping) {
+      ExportGrouping.category => '适合按物品分类整理',
+      ExportGrouping.box => '适合按搬家箱号整理',
+    };
+  }
+}
+
+class _ExportChoice {
+  const _ExportChoice({required this.format, required this.grouping});
+
+  final ExportFormat format;
+  final ExportGrouping grouping;
 }
 
 class _ItemCard extends StatelessWidget {

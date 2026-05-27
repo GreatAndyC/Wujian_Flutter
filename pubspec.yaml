@@ -10,7 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  excel: ^4.0.6
   flutter_secure_storage: ^9.2.4
+  image: ^4.3.0
   image_picker: ^1.1.2
   path_provider: ^2.1.5
   pdf: ^3.11.1

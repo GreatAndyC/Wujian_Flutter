@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/app_settings_profile.dart';
+import '../../domain/entities/storage_usage_summary.dart';
 import '../../domain/entities/token_usage_stats.dart';
 import '../shell/app_scope.dart';
 
@@ -43,7 +44,7 @@ class _SettingsPageState extends State<SettingsPage> {
         Text('设置', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(
-          '可以保存多套火山方舟配置，并查看当前配置的 token 消耗情况。',
+          '这里可以管理多个豆包识别配置，并查看 token 消耗和本地存储占用。',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 18),
@@ -51,6 +52,12 @@ class _SettingsPageState extends State<SettingsPage> {
           activeStats: controller.activeUsageStats,
           overallStats: controller.overallUsageStats,
           activeProfileName: controller.activeProfile.name,
+        ),
+        const SizedBox(height: 18),
+        _StorageSection(
+          usage: controller.storageUsage,
+          isBusy: controller.isBusy,
+          onOptimize: () => controller.optimizeStorage(),
         ),
         const SizedBox(height: 18),
         DropdownButtonFormField<String>(
@@ -132,7 +139,7 @@ class _SettingsPageState extends State<SettingsPage> {
           maxLines: 5,
           decoration: const InputDecoration(
             labelText: '自定义提示词',
-            hintText: '例如优先按房间、箱号、物品品类输出结构化信息。',
+            hintText: '例如优先按房间、箱号、物品类别输出结构化信息。',
           ),
         ),
         const SizedBox(height: 8),
@@ -295,6 +302,66 @@ class _UsageSection extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _StorageSection extends StatelessWidget {
+  const _StorageSection({
+    required this.usage,
+    required this.isBusy,
+    required this.onOptimize,
+  });
+
+  final StorageUsageSummary usage;
+  final bool isBusy;
+  final Future<void> Function() onOptimize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('本地存储', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            Text(
+              '拍照后会压缩保存，导出文件只保留最近几份。',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 14),
+            _MetricRow(label: '图片数量', value: '${usage.imageCount}'),
+            _MetricRow(label: '图片占用', value: _formatBytes(usage.imageBytes)),
+            _MetricRow(label: '导出文件', value: '${usage.exportCount}'),
+            _MetricRow(label: '导出占用', value: _formatBytes(usage.exportBytes)),
+            _MetricRow(label: '合计', value: _formatBytes(usage.totalBytes)),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: isBusy ? null : onOptimize,
+              icon: const Icon(Icons.cleaning_services_outlined),
+              label: const Text('立即优化存储'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) {
+      return '$bytes B';
+    }
+    final kb = bytes / 1024;
+    if (kb < 1024) {
+      return '${kb.toStringAsFixed(1)} KB';
+    }
+    final mb = kb / 1024;
+    if (mb < 1024) {
+      return '${mb.toStringAsFixed(1)} MB';
+    }
+    final gb = mb / 1024;
+    return '${gb.toStringAsFixed(2)} GB';
   }
 }
 

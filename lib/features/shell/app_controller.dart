@@ -3,16 +3,20 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../data/services/excel_export_service.dart';
+import '../../data/services/markdown_export_service.dart';
+import '../../data/services/media_storage_service.dart';
 import '../../data/services/pdf_export_service.dart';
 import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/app_settings_profile.dart';
 import '../../domain/entities/app_settings_store.dart';
+import '../../domain/entities/export_format.dart';
 import '../../domain/entities/export_grouping.dart';
 import '../../domain/entities/item_record.dart';
 import '../../domain/entities/recognition_result.dart';
+import '../../domain/entities/storage_usage_summary.dart';
 import '../../domain/entities/token_usage_stats.dart';
 import '../../domain/repositories/item_repository.dart';
 import '../../domain/repositories/pending_queue_repository.dart';
@@ -28,12 +32,18 @@ class AppController extends ChangeNotifier {
     required RecognitionRepository recognitionRepository,
     required TokenUsageRepository tokenUsageRepository,
     required PdfExportService pdfExportService,
+    required ExcelExportService excelExportService,
+    required MarkdownExportService markdownExportService,
+    required MediaStorageService mediaStorageService,
   }) : _settingsRepository = settingsRepository,
        _itemRepository = itemRepository,
        _pendingQueueRepository = pendingQueueRepository,
        _recognitionRepository = recognitionRepository,
        _tokenUsageRepository = tokenUsageRepository,
-       _pdfExportService = pdfExportService;
+       _pdfExportService = pdfExportService,
+       _excelExportService = excelExportService,
+       _markdownExportService = markdownExportService,
+       _mediaStorageService = mediaStorageService;
 
   final SettingsRepository _settingsRepository;
   final ItemRepository _itemRepository;
@@ -41,12 +51,16 @@ class AppController extends ChangeNotifier {
   final RecognitionRepository _recognitionRepository;
   final TokenUsageRepository _tokenUsageRepository;
   final PdfExportService _pdfExportService;
+  final ExcelExportService _excelExportService;
+  final MarkdownExportService _markdownExportService;
+  final MediaStorageService _mediaStorageService;
   final ImagePicker _picker = ImagePicker();
 
   AppSettingsStore _settingsStore = AppSettingsStore.initial();
   List<ItemRecord> _items = const [];
   List<ItemRecord> _pendingQueue = const [];
   Map<String, TokenUsageStats> _usageStatsByProfileId = {};
+  StorageUsageSummary _storageUsage = const StorageUsageSummary.empty();
   int _currentIndex = 0;
   bool _isReady = false;
   bool _isBusy = false;
@@ -60,6 +74,7 @@ class AppController extends ChangeNotifier {
   List<AppSettingsProfile> get profiles => _settingsStore.profiles;
   List<ItemRecord> get items => _items;
   List<ItemRecord> get pendingQueue => _pendingQueue;
+  StorageUsageSummary get storageUsage => _storageUsage;
   int get currentIndex => _currentIndex;
   bool get isReady => _isReady;
   bool get isBusy => _isBusy;
@@ -98,8 +113,10 @@ class AppController extends ChangeNotifier {
     _items = await _itemRepository.loadItems();
     _pendingQueue = await _pendingQueueRepository.loadPendingItems();
     _usageStatsByProfileId = await _tokenUsageRepository.loadUsageStats();
+    await _refreshStorageUsage();
     _isReady = true;
     notifyListeners();
+    unawaited(optimizeStorage(silent: true));
     unawaited(_processPendingQueue());
   }
 
@@ -175,9 +192,10 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<void> exportItemsReport({
+  Future<void> exportItems({
     required List<ItemRecord> items,
     required ExportGrouping grouping,
+    required ExportFormat format,
   }) async {
     if (items.isEmpty) {
       _message = '当前没有可导出的物品';
@@ -186,15 +204,27 @@ class AppController extends ChangeNotifier {
     }
 
     await _runBusy(() async {
-      final file = await _pdfExportService.exportItems(
-        items: items,
-        grouping: grouping,
-      );
-      _message = 'PDF 已导出';
+      final file = switch (format) {
+        ExportFormat.pdf => await _pdfExportService.exportItems(
+          items: items,
+          grouping: grouping,
+        ),
+        ExportFormat.excel => await _excelExportService.exportItems(
+          items: items,
+          grouping: grouping,
+        ),
+        ExportFormat.markdown => await _markdownExportService.exportItems(
+          items: items,
+          grouping: grouping,
+        ),
+      };
+
+      await _refreshStorageUsage();
+      _message = '${format.label} 已导出';
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path)],
-          text: '物见导出清单 · ${grouping.label}',
+          text: '物见导出清单 · ${format.label} · ${grouping.label}',
           subject: '物见导出清单',
         ),
       );
@@ -231,7 +261,7 @@ class AppController extends ChangeNotifier {
         capturedCount++;
       }
       _message = capturedCount == 0
-          ? '已结束连续拍照'
+          ? '已结束连续拍摄'
           : '连续拍照完成，已加入 $capturedCount 条待确认记录';
     } catch (error) {
       _message = error.toString().replaceFirst('Exception: ', '');
@@ -247,6 +277,7 @@ class AppController extends ChangeNotifier {
       ..._pendingQueue.where((entry) => entry.id != item.id),
     ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     await _pendingQueueRepository.savePendingItems(_pendingQueue);
+    await _refreshStorageUsage();
     if (notify) {
       notifyListeners();
     }
@@ -255,6 +286,7 @@ class AppController extends ChangeNotifier {
   Future<void> removePendingItem(String id) async {
     _pendingQueue = _pendingQueue.where((entry) => entry.id != id).toList();
     await _pendingQueueRepository.savePendingItems(_pendingQueue);
+    await optimizeStorage(silent: true);
     _message = '已移出待确认队列';
     notifyListeners();
   }
@@ -267,6 +299,7 @@ class AppController extends ChangeNotifier {
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     await _pendingQueueRepository.savePendingItems(_pendingQueue);
     await _itemRepository.saveItems(_items);
+    await _refreshStorageUsage();
     _message = '物品已确认并入库';
     notifyListeners();
   }
@@ -275,6 +308,7 @@ class AppController extends ChangeNotifier {
     _items = [item, ..._items.where((entry) => entry.id != item.id)]
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     await _itemRepository.saveItems(_items);
+    await _refreshStorageUsage();
     _message = '物品已保存';
     notifyListeners();
   }
@@ -287,6 +321,18 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> optimizeStorage({bool silent = false}) async {
+    await _runBusy(() async {
+      await _mediaStorageService.optimizeStorage(
+        referencedImagePaths: _allReferencedImagePaths(),
+      );
+      await _refreshStorageUsage();
+      if (!silent) {
+        _message = '已完成存储优化';
+      }
+    }, keepBusyState: silent);
+  }
+
   void clearMessage() {
     _message = null;
     notifyListeners();
@@ -297,8 +343,8 @@ class AppController extends ChangeNotifier {
     await _runBusy(() async {
       photo = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 88,
-        maxWidth: 1800,
+        imageQuality: 72,
+        maxWidth: 1280,
       );
     }, keepBusyState: true);
     return photo;
@@ -328,6 +374,7 @@ class AppController extends ChangeNotifier {
   Future<ItemRecord> _createQueuedDraft(XFile photo) async {
     final imageFile = await _persistImage(File(photo.path));
     _latestImage = imageFile;
+    await _refreshStorageUsage();
     notifyListeners();
 
     final now = DateTime.now();
@@ -444,13 +491,20 @@ class AppController extends ChangeNotifier {
   }
 
   Future<File> _persistImage(File source) async {
-    final root = await getApplicationDocumentsDirectory();
-    final folder = Directory('${root.path}${Platform.pathSeparator}images');
-    await folder.create(recursive: true);
-    final target = File(
-      '${folder.path}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.jpg',
-    );
-    return source.copy(target.path);
+    return _mediaStorageService.persistImage(source);
+  }
+
+  Future<void> _refreshStorageUsage() async {
+    _storageUsage = await _mediaStorageService.computeUsage();
+  }
+
+  Iterable<String> _allReferencedImagePaths() sync* {
+    for (final item in _items) {
+      yield item.imagePath;
+    }
+    for (final item in _pendingQueue) {
+      yield item.imagePath;
+    }
   }
 
   String _detectMimeType(String path) {

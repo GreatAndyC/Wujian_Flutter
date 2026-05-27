@@ -1,15 +1,18 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import 'media_storage_service.dart';
 import '../../domain/entities/export_grouping.dart';
 import '../../domain/entities/item_record.dart';
 
 class PdfExportService {
+  PdfExportService(this._mediaStorageService);
+
   static const _fontAssetPath = 'assets/fonts/simhei.ttf';
+  final MediaStorageService _mediaStorageService;
 
   Future<File> exportItems({
     required List<ItemRecord> items,
@@ -46,13 +49,14 @@ class PdfExportService {
       ),
     );
 
-    final outputDirectory = await _exportsDirectory();
+    final outputDirectory = await _mediaStorageService.exportsDirectory();
     final fileName =
         'wujian-${grouping.name}-${generatedAt.millisecondsSinceEpoch}.pdf';
     final file = File(
       '${outputDirectory.path}${Platform.pathSeparator}$fileName',
     );
     await file.writeAsBytes(await document.save());
+    await _mediaStorageService.pruneExports();
     return file;
   }
 
@@ -291,14 +295,5 @@ class PdfExportService {
       for (final key in sortedKeys)
         key: (map[key]!..sort((a, b) => a.name.compareTo(b.name))),
     };
-  }
-
-  Future<Directory> _exportsDirectory() async {
-    final baseDirectory = await getApplicationDocumentsDirectory();
-    final directory = Directory(
-      '${baseDirectory.path}${Platform.pathSeparator}exports',
-    );
-    await directory.create(recursive: true);
-    return directory;
   }
 }
