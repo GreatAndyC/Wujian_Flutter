@@ -63,6 +63,13 @@ class _SettingsPageState extends State<SettingsPage> {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
+        final modelItems = _modelItems(
+          controller.activeProfile.settings.providerId,
+        );
+        final selectedModel = _selectedModelValue(
+          items: modelItems,
+          currentModel: _modelController.text,
+        );
         return ListView(
           key: const ValueKey('settings-page'),
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
@@ -86,10 +93,9 @@ class _SettingsPageState extends State<SettingsPage> {
               onOptimize: () => controller.optimizeStorage(),
             ),
             const SizedBox(height: 18),
-            DropdownButtonFormField<String>(
-              key: ValueKey(controller.activeProfile.id),
-              initialValue: controller.activeProfile.id,
-              decoration: const InputDecoration(labelText: '当前配置'),
+            _DropdownField<String>(
+              label: '当前配置',
+              value: controller.activeProfile.id,
               items: controller.profiles
                   .map(
                     (profile) => DropdownMenuItem(
@@ -103,9 +109,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   return;
                 }
                 await controller.selectProfile(value);
-                setState(() {
-                  _boundProfileId = null;
-                });
               },
             ),
             const SizedBox(height: 12),
@@ -136,12 +139,9 @@ class _SettingsPageState extends State<SettingsPage> {
               decoration: const InputDecoration(labelText: '配置名称'),
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              key: ValueKey(
-                '${controller.activeProfile.id}-${controller.activeProfile.settings.providerId}',
-              ),
-              initialValue: controller.activeProfile.settings.providerId,
-              decoration: const InputDecoration(labelText: '服务商预设'),
+            _DropdownField<String>(
+              label: '服务商预设',
+              value: controller.activeProfile.settings.providerId,
               items: AiProviderPreset.values
                   .map(
                     (preset) => DropdownMenuItem(
@@ -181,16 +181,10 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              key: ValueKey(
-                '${controller.activeProfile.id}-${controller.activeProfile.settings.providerId}-model',
-              ),
-              initialValue: _initialModelValue(
-                controller.activeProfile.settings.providerId,
-                _modelController.text,
-              ),
-              decoration: const InputDecoration(labelText: '常用模型'),
-              items: _modelItems(controller.activeProfile.settings.providerId),
+            _DropdownField<String>(
+              label: '常用模型',
+              value: selectedModel,
+              items: modelItems,
               onChanged: (value) {
                 if (value == null || value.isEmpty) {
                   return;
@@ -335,14 +329,17 @@ class _SettingsPageState extends State<SettingsPage> {
         .toList();
   }
 
-  String? _initialModelValue(String providerId, String currentModel) {
-    final preset = AiProviderPreset.fromId(providerId);
-    if (currentModel.trim().isEmpty) {
-      return preset.recommendedModels.isEmpty
-          ? ''
-          : preset.recommendedModels.first;
+  String? _selectedModelValue({
+    required List<DropdownMenuItem<String>> items,
+    required String currentModel,
+  }) {
+    final trimmedModel = currentModel.trim();
+    if (trimmedModel.isEmpty) {
+      return items.any((item) => item.value == '') ? '' : null;
     }
-    return currentModel.trim();
+    return items.any((item) => item.value == trimmedModel)
+        ? trimmedModel
+        : null;
   }
 
   Future<void> _createProfile() async {
@@ -383,9 +380,6 @@ class _SettingsPageState extends State<SettingsPage> {
       profileName: result,
       settings: current.copyWith(apiKey: current.apiKey),
     );
-    setState(() {
-      _boundProfileId = null;
-    });
   }
 
   Future<void> _save(BuildContext context, {bool showFeedback = true}) async {
@@ -405,6 +399,35 @@ class _SettingsPageState extends State<SettingsPage> {
     if (showFeedback && context.mounted) {
       FocusScope.of(context).unfocus();
     }
+  }
+}
+
+class _DropdownField<T> extends StatelessWidget {
+  const _DropdownField({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final String label;
+  final T? value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(labelText: label),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          isExpanded: true,
+          value: value,
+          items: items,
+          onChanged: onChanged,
+        ),
+      ),
+    );
   }
 }
 
