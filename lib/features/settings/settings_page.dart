@@ -15,20 +15,30 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  TextEditingController? _profileNameController;
-  TextEditingController? _baseUrlController;
-  TextEditingController? _apiKeyController;
-  TextEditingController? _modelController;
-  TextEditingController? _promptController;
+  late final TextEditingController _profileNameController;
+  late final TextEditingController _baseUrlController;
+  late final TextEditingController _apiKeyController;
+  late final TextEditingController _modelController;
+  late final TextEditingController _promptController;
   String? _boundProfileId;
 
   @override
+  void initState() {
+    super.initState();
+    _profileNameController = TextEditingController();
+    _baseUrlController = TextEditingController();
+    _apiKeyController = TextEditingController();
+    _modelController = TextEditingController();
+    _promptController = TextEditingController();
+  }
+
+  @override
   void dispose() {
-    _profileNameController?.dispose();
-    _baseUrlController?.dispose();
-    _apiKeyController?.dispose();
-    _modelController?.dispose();
-    _promptController?.dispose();
+    _profileNameController.dispose();
+    _baseUrlController.dispose();
+    _apiKeyController.dispose();
+    _modelController.dispose();
+    _promptController.dispose();
     super.dispose();
   }
 
@@ -164,7 +174,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               initialValue: _initialModelValue(
                 controller.activeProfile.settings.providerId,
-                _modelController?.text ?? '',
+                _modelController.text,
               ),
               decoration: const InputDecoration(labelText: '常用模型'),
               items: _modelItems(controller.activeProfile.settings.providerId),
@@ -173,7 +183,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   return;
                 }
                 setState(() {
-                  _modelController?.text = value;
+                  _modelController.text = value;
                 });
               },
             ),
@@ -234,40 +244,54 @@ class _SettingsPageState extends State<SettingsPage> {
       return;
     }
     _boundProfileId = profile.id;
-    _profileNameController?.dispose();
-    _baseUrlController?.dispose();
-    _apiKeyController?.dispose();
-    _modelController?.dispose();
-    _promptController?.dispose();
-    _profileNameController = TextEditingController(text: profile.name);
-    _baseUrlController = TextEditingController(text: profile.settings.baseUrl);
-    _apiKeyController = TextEditingController(text: profile.settings.apiKey);
-    _modelController = TextEditingController(text: profile.settings.model);
-    _promptController = TextEditingController(
+    _profileNameController.value = TextEditingValue(
+      text: profile.name,
+      selection: TextSelection.collapsed(offset: profile.name.length),
+    );
+    _baseUrlController.value = TextEditingValue(
+      text: profile.settings.baseUrl,
+      selection: TextSelection.collapsed(
+        offset: profile.settings.baseUrl.length,
+      ),
+    );
+    _apiKeyController.value = TextEditingValue(
+      text: profile.settings.apiKey,
+      selection: TextSelection.collapsed(
+        offset: profile.settings.apiKey.length,
+      ),
+    );
+    _modelController.value = TextEditingValue(
+      text: profile.settings.model,
+      selection: TextSelection.collapsed(offset: profile.settings.model.length),
+    );
+    _promptController.value = TextEditingValue(
       text: profile.settings.customPrompt,
+      selection: TextSelection.collapsed(
+        offset: profile.settings.customPrompt.length,
+      ),
     );
   }
 
   Future<void> _applyProviderPreset(String providerId) async {
     final preset = AiProviderPreset.fromId(providerId);
     setState(() {
-      _baseUrlController?.text = preset.baseUrl;
-      _modelController?.text = preset.defaultModel;
+      _baseUrlController.text = preset.baseUrl;
+      _modelController.text = preset.defaultModel;
     });
 
     final controller = AppScope.of(context);
     final profile = controller.activeProfile;
     await controller.saveProfile(
       profileId: profile.id,
-      profileName: _profileNameController!.text.trim().isEmpty
+      profileName: _profileNameController.text.trim().isEmpty
           ? profile.name
-          : _profileNameController!.text.trim(),
+          : _profileNameController.text.trim(),
       settings: AppSettings(
         providerId: providerId,
         baseUrl: preset.baseUrl,
-        apiKey: _apiKeyController!.text.trim(),
+        apiKey: _apiKeyController.text.trim(),
         model: preset.defaultModel,
-        customPrompt: _promptController!.text.trim(),
+        customPrompt: _promptController.text.trim(),
       ),
     );
   }
@@ -276,9 +300,9 @@ class _SettingsPageState extends State<SettingsPage> {
     final preset = AiProviderPreset.fromId(providerId);
     final models = [
       ...preset.recommendedModels,
-      if ((_modelController?.text.trim().isNotEmpty ?? false) &&
-          !preset.recommendedModels.contains(_modelController!.text.trim()))
-        _modelController!.text.trim(),
+      if (_modelController.text.trim().isNotEmpty &&
+          !preset.recommendedModels.contains(_modelController.text.trim()))
+        _modelController.text.trim(),
     ];
 
     if (models.isEmpty) {
@@ -347,14 +371,14 @@ class _SettingsPageState extends State<SettingsPage> {
     final controller = AppScope.of(context);
     final settings = AppSettings(
       providerId: controller.activeProfile.settings.providerId,
-      baseUrl: _baseUrlController!.text.trim(),
-      apiKey: _apiKeyController!.text.trim(),
-      model: _modelController!.text.trim(),
-      customPrompt: _promptController!.text.trim(),
+      baseUrl: _baseUrlController.text.trim(),
+      apiKey: _apiKeyController.text.trim(),
+      model: _modelController.text.trim(),
+      customPrompt: _promptController.text.trim(),
     );
     await controller.saveProfile(
       profileId: controller.activeProfile.id,
-      profileName: _profileNameController!.text.trim(),
+      profileName: _profileNameController.text.trim(),
       settings: settings,
     );
     if (showFeedback && context.mounted) {
