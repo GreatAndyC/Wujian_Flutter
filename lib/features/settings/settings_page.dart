@@ -53,7 +53,11 @@ class _SettingsPageState extends State<SettingsPage> {
       _controller?.removeListener(_handleControllerChanged);
       _controller = nextController;
       _controller!.addListener(_handleControllerChanged);
-      _handleControllerChanged();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _bindProfile(nextController.activeProfile);
+        }
+      });
     }
   }
 
