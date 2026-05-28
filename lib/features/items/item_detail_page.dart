@@ -26,6 +26,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final imageExists =
+        _item.imagePath.trim().isNotEmpty && File(_item.imagePath).existsSync();
     final parameters = {
       '分类': _item.category,
       '房间': _item.room,
@@ -55,7 +57,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
           children: [
-            if (_item.imagePath.isNotEmpty)
+            if (imageExists)
               ClipRRect(
                 borderRadius: BorderRadius.circular(28),
                 child: Image.file(

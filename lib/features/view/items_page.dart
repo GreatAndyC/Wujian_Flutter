@@ -501,7 +501,10 @@ class _ItemThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (item.imagePath.isEmpty) {
+    final imageExists =
+        item.imagePath.trim().isNotEmpty && File(item.imagePath).existsSync();
+
+    if (!imageExists) {
       return Container(
         width: 78,
         height: 78,

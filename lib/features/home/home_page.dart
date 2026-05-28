@@ -439,6 +439,9 @@ class _RecentItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final imageExists =
+        item.imagePath.trim().isNotEmpty && File(item.imagePath).existsSync();
+
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(28),
@@ -452,20 +455,20 @@ class _RecentItemCard extends StatelessWidget {
             horizontal: 18,
             vertical: 8,
           ),
-          leading: item.imagePath.isEmpty
-              ? CircleAvatar(
-                  backgroundColor: AppTheme.mint,
-                  child: Text(
-                    item.name.isEmpty ? '?' : item.name.substring(0, 1),
-                  ),
-                )
-              : ClipRRect(
+          leading: imageExists
+              ? ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: Image.file(
                     File(item.imagePath),
                     width: 56,
                     height: 56,
                     fit: BoxFit.cover,
+                  ),
+                )
+              : CircleAvatar(
+                  backgroundColor: AppTheme.mint,
+                  child: Text(
+                    item.name.isEmpty ? '?' : item.name.substring(0, 1),
                   ),
                 ),
           title: Text(item.name),
