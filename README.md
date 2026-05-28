@@ -30,7 +30,9 @@
 - 单张拍摄识别
 - 连续拍摄，后台逐条识别
 - 待确认队列
+- 首页待确认队列支持直接确认
 - 已入库物品搜索、筛选、查看
+- 视图页快速编辑物品状态
 - 多配置管理
 - 多模型 / 多服务商预设
 - Token 统计
@@ -78,7 +80,7 @@
 
 ## 截止目前的产品状态
 
-- 版本：`1.0.2+3`
+- 版本：`1.0.3+4`
 - Android 包名：`com.wujian.app.icheck`
 - 默认预设：`火山方舟`
 - 默认模型：`doubao-seed-2-0-mini-260428`
@@ -102,13 +104,19 @@
 
 ```bash
 adb devices
-adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+adb install -r build/app/outputs/flutter-apk/app-release.apk
 ```
 
 如果你要自己构建：
 
 ```bash
 flutter pub get
+flutter build apk --release
+```
+
+如果你要生成 GitHub Release 对应的分架构 APK：
+
+```bash
 flutter build apk --release --split-per-abi
 ```
 
@@ -118,7 +126,7 @@ flutter build apk --release --split-per-abi
 - `app-armeabi-v7a-release.apk`
 - `app-x86_64-release.apk`
 
-大多数真机优先安装 `app-arm64-v8a-release.apk`。
+大多数真机优先安装 `app-arm64-v8a-release.apk`。如果只是本地自测，直接用默认产物 `app-release.apk` 即可。
 
 ### iOS
 
@@ -174,6 +182,13 @@ flutter build ipa --release
 6. 点击“测试连接”
 7. 回到首页拍一张相同的测试图片
 
+当前推荐的实际使用流程：
+
+1. 在“设置”里新建一个配置并测试连接
+2. 回到首页拍照，图片会以原始比例完整展示
+3. 新照片先进入待确认队列，可直接在列表里点“确认”
+4. 进入“视图”后可继续快速修改物品状态，例如待确认、已装箱等
+
 为了横向对比不同模型，建议你每次都用同一组图片，观察这些维度：
 
 - 名称是否准确
@@ -208,6 +223,7 @@ flutter build ipa --release
 - API Key 使用 `flutter_secure_storage` 存储
 - 普通配置、物品记录、导出文件保存在本地
 - 图片会保存在本地，并参与导出
+- 配置字段、物品数据和本地图片不会因为正常重新打开 App 而丢失
 - 具体图片是否上传到第三方模型服务，取决于你当前选用的模型服务商
 
 如果你对隐私比较敏感，建议：
