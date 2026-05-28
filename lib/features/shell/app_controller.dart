@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/services/excel_export_service.dart';
+import '../../data/services/local_file_save_service.dart';
 import '../../data/services/markdown_export_service.dart';
 import '../../data/services/media_storage_service.dart';
 import '../../data/services/pdf_export_service.dart';
@@ -34,6 +34,7 @@ class AppController extends ChangeNotifier {
     required PdfExportService pdfExportService,
     required ExcelExportService excelExportService,
     required MarkdownExportService markdownExportService,
+    required LocalFileSaveService localFileSaveService,
     required MediaStorageService mediaStorageService,
   }) : _settingsRepository = settingsRepository,
        _itemRepository = itemRepository,
@@ -43,6 +44,7 @@ class AppController extends ChangeNotifier {
        _pdfExportService = pdfExportService,
        _excelExportService = excelExportService,
        _markdownExportService = markdownExportService,
+       _localFileSaveService = localFileSaveService,
        _mediaStorageService = mediaStorageService;
 
   final SettingsRepository _settingsRepository;
@@ -53,8 +55,8 @@ class AppController extends ChangeNotifier {
   final PdfExportService _pdfExportService;
   final ExcelExportService _excelExportService;
   final MarkdownExportService _markdownExportService;
+  final LocalFileSaveService _localFileSaveService;
   final MediaStorageService _mediaStorageService;
-  final ImagePicker _picker = ImagePicker();
 
   AppSettingsStore _settingsStore = AppSettingsStore.initial();
   List<ItemRecord> _items = const [];
@@ -64,7 +66,6 @@ class AppController extends ChangeNotifier {
   int _currentIndex = 0;
   bool _isReady = false;
   bool _isBusy = false;
-  bool _isContinuousCapturing = false;
   bool _isProcessingQueue = false;
   String? _message;
   File? _latestImage;
@@ -78,7 +79,6 @@ class AppController extends ChangeNotifier {
   int get currentIndex => _currentIndex;
   bool get isReady => _isReady;
   bool get isBusy => _isBusy;
-  bool get isContinuousCapturing => _isContinuousCapturing;
   bool get isProcessingQueue => _isProcessingQueue;
   String? get message => _message;
   File? get latestImage => _latestImage;
@@ -196,6 +196,7 @@ class AppController extends ChangeNotifier {
     required List<ItemRecord> items,
     required ExportGrouping grouping,
     required ExportFormat format,
+    required ExportDestination destination,
   }) async {
     if (items.isEmpty) {
       _message = '当前没有可导出的物品';
@@ -220,23 +221,43 @@ class AppController extends ChangeNotifier {
       };
 
       await _refreshStorageUsage();
-      _message = '${format.label} 已导出';
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path)],
-          text: '物见导出清单 · ${format.label} · ${grouping.label}',
-          subject: '物见导出清单',
-        ),
+      if (destination == ExportDestination.share) {
+        _message = '${format.label} 已导出';
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(file.path)],
+            text: '物见导出清单 · ${format.label} · ${grouping.label}',
+            subject: '物见导出清单',
+          ),
+        );
+        return;
+      }
+
+      final saved = await _localFileSaveService.saveFile(
+        file,
+        mimeType: _localFileSaveService.mimeTypeFor(file),
       );
+      _message = saved ? '${format.label} 已保存到本地' : '已取消保存';
     });
   }
 
-  Future<void> captureSingleToQueue() async {
-    final photo = await _pickPhoto();
-    if (photo == null) {
+  Future<void> deleteItemsById(Set<String> ids) async {
+    if (ids.isEmpty) {
       return;
     }
 
+    await _runBusy(() async {
+      _items = _items.where((item) => !ids.contains(item.id)).toList();
+      await _itemRepository.saveItems(_items);
+      await _mediaStorageService.optimizeStorage(
+        referencedImagePaths: _allReferencedImagePaths(),
+      );
+      await _refreshStorageUsage();
+      _message = '已删除 ${ids.length} 件物品';
+    });
+  }
+
+  Future<void> queueCapturedFile(File photo) async {
     try {
       final draft = await _createQueuedDraft(photo);
       await enqueuePendingItem(draft);
@@ -245,38 +266,6 @@ class AppController extends ChangeNotifier {
       unawaited(_processPendingQueue());
     } catch (error) {
       _message = error.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
-    }
-  }
-
-  Future<void> startContinuousCapture() async {
-    if (_isContinuousCapturing) {
-      return;
-    }
-
-    _isContinuousCapturing = true;
-    _message = null;
-    notifyListeners();
-
-    var capturedCount = 0;
-    try {
-      while (true) {
-        final photo = await _pickPhoto();
-        if (photo == null) {
-          break;
-        }
-        final draft = await _createQueuedDraft(photo);
-        await enqueuePendingItem(draft);
-        unawaited(_processPendingQueue());
-        capturedCount++;
-      }
-      _message = capturedCount == 0
-          ? '已结束连续拍摄'
-          : '连续拍照完成，已加入 $capturedCount 条待确认记录';
-    } catch (error) {
-      _message = error.toString().replaceFirst('Exception: ', '');
-    } finally {
-      _isContinuousCapturing = false;
       notifyListeners();
     }
   }
@@ -348,20 +337,8 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<XFile?> _pickPhoto() async {
-    XFile? photo;
-    await _runBusy(() async {
-      photo = await _picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 72,
-        maxWidth: 1280,
-      );
-    }, keepBusyState: true);
-    return photo;
-  }
-
-  Future<ItemRecord> _createQueuedDraft(XFile photo) async {
-    final imageFile = await _persistImage(File(photo.path));
+  Future<ItemRecord> _createQueuedDraft(File photo) async {
+    final imageFile = await _persistImage(photo);
     _latestImage = imageFile;
     await _refreshStorageUsage();
     notifyListeners();
@@ -526,3 +503,5 @@ class AppController extends ChangeNotifier {
     }
   }
 }
+
+enum ExportDestination { share, save }

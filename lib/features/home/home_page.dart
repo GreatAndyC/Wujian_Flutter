@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_theme.dart';
 import '../../domain/entities/item_record.dart';
+import '../camera/camera_capture_page.dart';
 import '../items/item_detail_page.dart';
 import '../items/item_editor_sheet.dart';
 import '../shell/app_scope.dart';
@@ -79,11 +80,9 @@ class HomePage extends StatelessWidget {
                         children: [
                           Expanded(
                             child: FilledButton.icon(
-                              onPressed:
-                                  controller.isBusy ||
-                                      controller.isContinuousCapturing
+                              onPressed: controller.isBusy
                                   ? null
-                                  : () => _captureSingle(context),
+                                  : () => _openCamera(context),
                               style: FilledButton.styleFrom(
                                 backgroundColor: Colors.white,
                                 foregroundColor: AppTheme.ink,
@@ -98,9 +97,9 @@ class HomePage extends StatelessWidget {
                           const SizedBox(width: 12),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: controller.isContinuousCapturing
+                              onPressed: controller.isBusy
                                   ? null
-                                  : controller.startContinuousCapture,
+                                  : () => _openCamera(context),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.white,
                                 side: BorderSide(
@@ -110,20 +109,8 @@ class HomePage extends StatelessWidget {
                                   vertical: 16,
                                 ),
                               ),
-                              icon: controller.isContinuousCapturing
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.photo_camera_back),
-                              label: Text(
-                                controller.isContinuousCapturing
-                                    ? '连续拍摄中'
-                                    : '连续拍照',
-                              ),
+                              icon: const Icon(Icons.photo_camera_back),
+                              label: const Text('连续拍照'),
                             ),
                           ),
                         ],
@@ -212,9 +199,10 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  Future<void> _captureSingle(BuildContext context) async {
-    final controller = AppScope.of(context);
-    await controller.captureSingleToQueue();
+  Future<void> _openCamera(BuildContext context) async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const CameraCapturePage()));
   }
 }
 
@@ -307,24 +295,33 @@ class _PendingItemCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _PendingThumbnail(item: item),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    item.name,
-                    style: Theme.of(context).textTheme.titleLarge,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        item.recognitionError.trim().isNotEmpty
+                            ? item.recognitionError
+                            : item.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Chip(label: Text(item.queueState.label)),
               ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              item.recognitionError.trim().isNotEmpty
-                  ? item.recognitionError
-                  : item.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 14),
             Row(
@@ -366,6 +363,38 @@ class _PendingItemCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PendingThumbnail extends StatelessWidget {
+  const _PendingThumbnail({required this.item});
+
+  final ItemRecord item;
+
+  @override
+  Widget build(BuildContext context) {
+    if (item.imagePath.trim().isEmpty || !File(item.imagePath).existsSync()) {
+      return Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: AppTheme.mint,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        alignment: Alignment.center,
+        child: const Icon(Icons.image_outlined),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Image.file(
+        File(item.imagePath),
+        width: 64,
+        height: 64,
+        fit: BoxFit.cover,
       ),
     );
   }

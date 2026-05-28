@@ -6,6 +6,7 @@ import '../data/repositories/local_settings_repository.dart';
 import '../data/repositories/local_token_usage_repository.dart';
 import '../data/repositories/volcengine_recognition_repository.dart';
 import '../data/services/excel_export_service.dart';
+import '../data/services/local_file_save_service.dart';
 import '../data/services/markdown_export_service.dart';
 import '../data/services/media_storage_service.dart';
 import '../data/services/pdf_export_service.dart';
@@ -30,6 +31,7 @@ class WujianApp extends StatelessWidget {
       pdfExportService: PdfExportService(mediaStorageService),
       excelExportService: ExcelExportService(mediaStorageService),
       markdownExportService: MarkdownExportService(mediaStorageService),
+      localFileSaveService: LocalFileSaveService(),
       mediaStorageService: mediaStorageService,
     );
     await controller.initialize();

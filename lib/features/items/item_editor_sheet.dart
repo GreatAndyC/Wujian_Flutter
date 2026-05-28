@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../domain/entities/item_record.dart';
@@ -103,6 +105,8 @@ class _ItemEditorSheetState extends State<ItemEditorSheet> {
                   '保存前可以修正分类、房间、箱号和参数。',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                const SizedBox(height: 18),
+                _PreviewImage(path: widget.initialItem.imagePath),
                 const SizedBox(height: 18),
                 _Field(label: '名称', controller: _nameController),
                 _Field(label: '分类', controller: _categoryController),
@@ -217,6 +221,29 @@ class _ItemEditorSheetState extends State<ItemEditorSheet> {
       updatedAt: DateTime.now(),
     );
     Navigator.of(context).pop(item);
+  }
+}
+
+class _PreviewImage extends StatelessWidget {
+  const _PreviewImage({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    if (path.trim().isEmpty || !File(path).existsSync()) {
+      return const SizedBox.shrink();
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Image.file(
+        File(path),
+        height: 150,
+        width: double.infinity,
+        fit: BoxFit.cover,
+      ),
+    );
   }
 }
 

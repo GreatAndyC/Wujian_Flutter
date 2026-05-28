@@ -7,6 +7,7 @@ import '../../domain/entities/export_format.dart';
 import '../../domain/entities/export_grouping.dart';
 import '../../domain/entities/item_record.dart';
 import '../items/item_detail_page.dart';
+import '../shell/app_controller.dart';
 import '../shell/app_scope.dart';
 
 class ItemsPage extends StatefulWidget {
@@ -19,6 +20,7 @@ class ItemsPage extends StatefulWidget {
 class _ItemsPageState extends State<ItemsPage> {
   String _query = '';
   String _selectedCategory = '全部';
+  final Set<String> _selectedIds = {};
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +41,10 @@ class _ItemsPageState extends State<ItemsPage> {
           item.box.toLowerCase().contains(query);
       return matchesCategory && matchesQuery;
     }).toList();
+    _selectedIds.removeWhere(
+      (id) => !controller.items.any((item) => item.id == id),
+    );
+    final isSelecting = _selectedIds.isNotEmpty;
 
     return CustomScrollView(
       key: const ValueKey('items-page'),
@@ -53,17 +59,31 @@ class _ItemsPageState extends State<ItemsPage> {
                   children: [
                     Expanded(
                       child: Text(
-                        '视图',
+                        isSelecting ? '已选择 ${_selectedIds.length} 件' : '视图',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
-                    FilledButton.icon(
-                      onPressed: controller.isBusy
-                          ? null
-                          : () => _showExportSheet(context, filtered),
-                      icon: const Icon(Icons.ios_share_outlined),
-                      label: const Text('导出'),
-                    ),
+                    if (isSelecting) ...[
+                      IconButton(
+                        onPressed: () => setState(_selectedIds.clear),
+                        icon: const Icon(Icons.close),
+                        tooltip: '取消选择',
+                      ),
+                      IconButton.filledTonal(
+                        onPressed: controller.isBusy
+                            ? null
+                            : () => _deleteSelected(context),
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: '删除所选',
+                      ),
+                    ] else
+                      FilledButton.icon(
+                        onPressed: controller.isBusy
+                            ? null
+                            : () => _showExportSheet(context, filtered),
+                        icon: const Icon(Icons.ios_share_outlined),
+                        label: const Text('导出'),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -113,7 +133,13 @@ class _ItemsPageState extends State<ItemsPage> {
                     final item = filtered[index];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: _ItemCard(item: item),
+                      child: _ItemCard(
+                        item: item,
+                        isSelected: _selectedIds.contains(item.id),
+                        isSelecting: isSelecting,
+                        onSelectionChanged: (selected) =>
+                            _setSelected(item.id, selected),
+                      ),
                     );
                   },
                 ),
@@ -136,14 +162,25 @@ class _ItemsPageState extends State<ItemsPage> {
           children: [
             for (final format in ExportFormat.values)
               for (final grouping in ExportGrouping.values)
-                ListTile(
-                  leading: Icon(_iconForFormat(format)),
-                  title: Text('${format.label} · ${grouping.label}'),
-                  subtitle: Text(_subtitleFor(grouping)),
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pop(_ExportChoice(format: format, grouping: grouping)),
-                ),
+                for (final destination in ExportDestination.values)
+                  ListTile(
+                    leading: Icon(
+                      destination == ExportDestination.share
+                          ? Icons.ios_share_outlined
+                          : Icons.save_alt_outlined,
+                    ),
+                    title: Text(
+                      '${format.label} · ${grouping.label} · ${_labelForDestination(destination)}',
+                    ),
+                    subtitle: Text(_subtitleFor(grouping)),
+                    onTap: () => Navigator.of(context).pop(
+                      _ExportChoice(
+                        format: format,
+                        grouping: grouping,
+                        destination: destination,
+                      ),
+                    ),
+                  ),
           ],
         ),
       ),
@@ -156,15 +193,46 @@ class _ItemsPageState extends State<ItemsPage> {
       items: items,
       grouping: choice.grouping,
       format: choice.format,
+      destination: choice.destination,
     );
   }
 
-  IconData _iconForFormat(ExportFormat format) {
-    return switch (format) {
-      ExportFormat.pdf => Icons.picture_as_pdf_outlined,
-      ExportFormat.excel => Icons.table_chart_outlined,
-      ExportFormat.markdown => Icons.notes_outlined,
-    };
+  void _setSelected(String id, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedIds.add(id);
+      } else {
+        _selectedIds.remove(id);
+      }
+    });
+  }
+
+  Future<void> _deleteSelected(BuildContext context) async {
+    final ids = {..._selectedIds};
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除所选物品'),
+        content: Text('确定删除 ${ids.length} 件物品吗？此操作不会保留在视图列表中。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+    await AppScope.of(context).deleteItemsById(ids);
+    if (mounted) {
+      setState(_selectedIds.clear);
+    }
   }
 
   String _subtitleFor(ExportGrouping grouping) {
@@ -173,19 +241,39 @@ class _ItemsPageState extends State<ItemsPage> {
       ExportGrouping.box => '适合按搬家箱号整理',
     };
   }
+
+  String _labelForDestination(ExportDestination destination) {
+    return switch (destination) {
+      ExportDestination.share => '分享',
+      ExportDestination.save => '保存到本地',
+    };
+  }
 }
 
 class _ExportChoice {
-  const _ExportChoice({required this.format, required this.grouping});
+  const _ExportChoice({
+    required this.format,
+    required this.grouping,
+    required this.destination,
+  });
 
   final ExportFormat format;
   final ExportGrouping grouping;
+  final ExportDestination destination;
 }
 
 class _ItemCard extends StatelessWidget {
-  const _ItemCard({required this.item});
+  const _ItemCard({
+    required this.item,
+    required this.isSelected,
+    required this.isSelecting,
+    required this.onSelectionChanged,
+  });
 
   final ItemRecord item;
+  final bool isSelected;
+  final bool isSelecting;
+  final ValueChanged<bool> onSelectionChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -193,10 +281,15 @@ class _ItemCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(28),
         onTap: () {
+          if (isSelecting) {
+            onSelectionChanged(!isSelected);
+            return;
+          }
           Navigator.of(
             context,
           ).push(MaterialPageRoute(builder: (_) => ItemDetailPage(item: item)));
         },
+        onLongPress: () => onSelectionChanged(true),
         child: Padding(
           padding: const EdgeInsets.all(18),
           child: Row(
@@ -248,6 +341,13 @@ class _ItemCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (isSelecting) ...[
+                const SizedBox(width: 8),
+                Checkbox(
+                  value: isSelected,
+                  onChanged: (value) => onSelectionChanged(value ?? false),
+                ),
+              ],
             ],
           ),
         ),

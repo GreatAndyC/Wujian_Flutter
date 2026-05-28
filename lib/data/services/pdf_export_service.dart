@@ -67,12 +67,6 @@ class PdfExportService {
     ExportGrouping grouping,
     DateTime generatedAt,
   ) {
-    final totalQuantity = items.fold<int>(
-      0,
-      (sum, item) => sum + item.quantity,
-    );
-    final groupedCount = _groupItems(items, grouping).length;
-
     return pw.Container(
       padding: const pw.EdgeInsets.all(24),
       decoration: pw.BoxDecoration(
@@ -94,51 +88,13 @@ class PdfExportService {
           ),
           pw.SizedBox(height: 8),
           pw.Text(
-            '按 ${grouping.label} 整理的家庭物品报告',
+            '${grouping.label} · ${items.length} 件物品',
             style: const pw.TextStyle(color: PdfColors.white, fontSize: 13),
           ),
-          pw.SizedBox(height: 22),
-          pw.Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _coverMetric('物品条目', '${items.length}'),
-              _coverMetric('总数量', '$totalQuantity'),
-              _coverMetric('分组数量', '$groupedCount'),
-              _coverMetric(
-                '导出时间',
-                '${generatedAt.year}-${generatedAt.month.toString().padLeft(2, '0')}-${generatedAt.day.toString().padLeft(2, '0')} ${generatedAt.hour.toString().padLeft(2, '0')}:${generatedAt.minute.toString().padLeft(2, '0')}',
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _coverMetric(String label, String value) {
-    return pw.Container(
-      width: 120,
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        color: PdfColor.fromInt(0x33FFFFFF),
-        borderRadius: pw.BorderRadius.circular(14),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
+          pw.SizedBox(height: 10),
           pw.Text(
-            label,
-            style: const pw.TextStyle(color: PdfColors.white, fontSize: 10),
-          ),
-          pw.SizedBox(height: 6),
-          pw.Text(
-            value,
-            style: pw.TextStyle(
-              color: PdfColors.white,
-              fontSize: 14,
-              fontWeight: pw.FontWeight.bold,
-            ),
+            '导出时间 ${_formatDateTime(generatedAt)}',
+            style: const pw.TextStyle(color: PdfColors.white, fontSize: 11),
           ),
         ],
       ),
@@ -310,6 +266,10 @@ class PdfExportService {
   }
 
   String _imageKey(ItemRecord item) => item.imagePath.trim();
+
+  String _formatDateTime(DateTime value) {
+    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  }
 
   Map<String, List<ItemRecord>> _groupItems(
     List<ItemRecord> items,

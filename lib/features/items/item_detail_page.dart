@@ -50,69 +50,77 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        children: [
-          if (_item.imagePath.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: Image.file(
-                File(_item.imagePath),
-                height: 240,
-                fit: BoxFit.cover,
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+          children: [
+            if (_item.imagePath.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: Image.file(
+                  File(_item.imagePath),
+                  height: 240,
+                  fit: BoxFit.cover,
+                ),
               ),
+            const SizedBox(height: 20),
+            Text(_item.name, style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(
+              _item.description,
+              style: Theme.of(context).textTheme.bodyLarge,
             ),
-          const SizedBox(height: 20),
-          Text(_item.name, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Text(_item.description, style: Theme.of(context).textTheme.bodyLarge),
-          const SizedBox(height: 18),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: parameters.entries
-                    .map(
-                      (entry) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(
-                              width: 72,
-                              child: Text(
-                                entry.key,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                            ),
-                            Expanded(
-                              child: Text(
-                                entry.value,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-          ),
-          if (_item.notes.trim().isNotEmpty) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(18),
-                child: Text(
-                  _item.notes,
-                  style: Theme.of(context).textTheme.bodyLarge,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: parameters.entries
+                      .map(
+                        (entry) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 72,
+                                child: Text(
+                                  entry.key,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  entry.value,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
             ),
+            if (_item.notes.trim().isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Text(
+                    _item.notes,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
