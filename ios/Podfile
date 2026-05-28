@@ -48,6 +48,7 @@ post_install do |installer|
         # Keep the plugin on Swift 5 semantics to avoid Swift 6 sendability
         # errors from upstream code when building with newer Xcode versions.
         config.build_settings['SWIFT_VERSION'] = '5.0'
+        config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
       end
     end
 
@@ -60,6 +61,13 @@ post_install do |installer|
           config.build_settings['WARNING_CFLAGS'] =
             "#{warning_flags} -Wno-deprecated-declarations"
         end
+        config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      end
+    end
+
+    if target.name == 'flutter_secure_storage'
+      target.build_configurations.each do |config|
+        config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
       end
     end
   end

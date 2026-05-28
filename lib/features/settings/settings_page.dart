@@ -369,31 +369,38 @@ class _UsageSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Token 统计', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useVerticalLayout = constraints.maxWidth < 760;
+        final cards = [
+          _UsageCard(
+            title: activeProfileName,
+            subtitle: '当前配置累计',
+            stats: activeStats,
+          ),
+          _UsageCard(title: '全部配置', subtitle: '总累计', stats: overallStats),
+        ];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: _UsageCard(
-                title: activeProfileName,
-                subtitle: '当前配置累计',
-                stats: activeStats,
+            Text('Token 统计', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            if (useVerticalLayout) ...[
+              cards[0],
+              const SizedBox(height: 12),
+              cards[1],
+            ] else
+              Row(
+                children: [
+                  Expanded(child: cards[0]),
+                  const SizedBox(width: 12),
+                  Expanded(child: cards[1]),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _UsageCard(
-                title: '全部配置',
-                subtitle: '总累计',
-                stats: overallStats,
-              ),
-            ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -578,10 +585,23 @@ class _MetricRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodyMedium),
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );
