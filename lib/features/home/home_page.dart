@@ -120,40 +120,29 @@ class HomePage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 18),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    const spacing = 12.0;
-                    final width = constraints.maxWidth;
-                    final columns = width >= 720
-                        ? 3
-                        : width >= 460
-                        ? 2
-                        : 1;
-                    final itemWidth =
-                        (width - spacing * (columns - 1)) / columns;
-
-                    final cards = [
-                      _MetricCard(
+                Row(
+                  children: [
+                    Expanded(
+                      child: _MetricCard(
                         label: '物品总数',
                         value: '${controller.items.length}',
                       ),
-                      _MetricCard(
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _MetricCard(
                         label: '待确认队列',
                         value: '${controller.pendingQueue.length}',
                       ),
-                      _MetricCard(label: '分类数量', value: '${stats.categories}'),
-                    ];
-
-                    return Wrap(
-                      spacing: spacing,
-                      runSpacing: spacing,
-                      children: cards
-                          .map(
-                            (card) => SizedBox(width: itemWidth, child: card),
-                          )
-                          .toList(),
-                    );
-                  },
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _MetricCard(
+                        label: '分类数量',
+                        value: '${stats.categories}',
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 18),
                 if (controller.latestImage != null)
@@ -230,14 +219,14 @@ class _MetricCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
         child: SizedBox(
-          height: 86,
+          height: 92,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 label,
                 style: Theme.of(context).textTheme.bodyMedium,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 10),
@@ -398,7 +387,14 @@ class _PendingItemCard extends StatelessWidget {
                               );
                             }
                           },
-                    child: Text(canConfirm ? '编辑确认' : '识别中'),
+                    style: FilledButton.styleFrom(
+                      textStyle: const TextStyle(fontSize: 13),
+                    ),
+                    child: Text(
+                      canConfirm ? '编辑确认' : '识别中',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -413,7 +409,14 @@ class _PendingItemCard extends StatelessWidget {
                               updatedAt: DateTime.now(),
                             ),
                           ),
-                    child: const Text('直接确认'),
+                    style: FilledButton.styleFrom(
+                      textStyle: const TextStyle(fontSize: 13),
+                    ),
+                    child: const Text(
+                      '直接确认',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),

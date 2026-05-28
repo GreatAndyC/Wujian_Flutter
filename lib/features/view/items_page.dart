@@ -416,6 +416,7 @@ class _ItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(28),
@@ -448,6 +449,46 @@ class _ItemCard extends StatelessWidget {
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                         ),
+                        PopupMenuButton<ItemStatus>(
+                          tooltip: '快速编辑状态',
+                          onSelected: (status) => controller.updateItem(
+                            item.copyWith(
+                              status: status,
+                              updatedAt: DateTime.now(),
+                            ),
+                          ),
+                          itemBuilder: (context) => [
+                            for (final status in ItemStatus.values)
+                              PopupMenuItem<ItemStatus>(
+                                value: status,
+                                child: Text(status.label),
+                              ),
+                          ],
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.bolt_outlined, size: 16),
+                                const SizedBox(width: 6),
+                                Text(
+                                  item.status.label,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                const SizedBox(width: 2),
+                                const Icon(Icons.expand_more, size: 16),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Chip(label: Text(item.category)),
                       ],
                     ),
@@ -463,10 +504,6 @@ class _ItemCard extends StatelessWidget {
                         _DataPill(
                           icon: Icons.inventory_outlined,
                           label: item.box.ifEmpty('未分配箱号'),
-                        ),
-                        _DataPill(
-                          icon: Icons.tag_outlined,
-                          label: item.status.label,
                         ),
                       ],
                     ),
