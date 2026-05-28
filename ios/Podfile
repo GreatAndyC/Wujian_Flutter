@@ -37,5 +37,30 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    target.build_configurations.each do |config|
+      # Xcode 26 no longer accepts very old pod deployment targets like 9.0.
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+    end
+
+    if target.name == 'camera_avfoundation'
+      target.build_configurations.each do |config|
+        # Keep the plugin on Swift 5 semantics to avoid Swift 6 sendability
+        # errors from upstream code when building with newer Xcode versions.
+        config.build_settings['SWIFT_VERSION'] = '5.0'
+      end
+    end
+
+    if target.name == 'share_plus'
+      target.build_configurations.each do |config|
+        # Suppress an upstream deprecation warning from the current plugin
+        # implementation until the dependency is upgraded.
+        warning_flags = config.build_settings['WARNING_CFLAGS'] || '$(inherited)'
+        unless warning_flags.include?('-Wno-deprecated-declarations')
+          config.build_settings['WARNING_CFLAGS'] =
+            "#{warning_flags} -Wno-deprecated-declarations"
+        end
+      end
+    end
   end
 end
