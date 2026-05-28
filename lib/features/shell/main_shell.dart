@@ -26,9 +26,9 @@ class MainShell extends StatelessWidget {
 
     return Scaffold(
       body: SafeArea(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: pages[controller.currentIndex],
+        child: IndexedStack(
+          index: controller.currentIndex,
+          children: pages,
         ),
       ),
       bottomNavigationBar: NavigationBar(
