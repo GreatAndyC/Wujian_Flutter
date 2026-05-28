@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:share_plus/share_plus.dart';
@@ -197,6 +198,7 @@ class AppController extends ChangeNotifier {
     required ExportGrouping grouping,
     required ExportFormat format,
     required ExportDestination destination,
+    Rect? sharePositionOrigin,
   }) async {
     if (items.isEmpty) {
       _message = '当前没有可导出的物品';
@@ -228,6 +230,7 @@ class AppController extends ChangeNotifier {
             files: [XFile(file.path)],
             text: '物见导出清单 · ${format.label} · ${grouping.label}',
             subject: '物见导出清单',
+            sharePositionOrigin: sharePositionOrigin,
           ),
         );
         return;

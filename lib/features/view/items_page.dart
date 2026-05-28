@@ -153,6 +153,7 @@ class _ItemsPageState extends State<ItemsPage> {
     List<ItemRecord> items,
   ) async {
     final controller = AppScope.of(context);
+    final sharePositionOrigin = _sharePositionOrigin(context);
     final choice = await showModalBottomSheet<_ExportChoice>(
       context: context,
       isScrollControlled: true,
@@ -229,6 +230,7 @@ class _ItemsPageState extends State<ItemsPage> {
       grouping: choice.grouping,
       format: choice.format,
       destination: choice.destination,
+      sharePositionOrigin: sharePositionOrigin,
     );
   }
 
@@ -290,6 +292,15 @@ class _ItemsPageState extends State<ItemsPage> {
       ExportDestination.share => '分享',
       ExportDestination.save => '保存到本地',
     };
+  }
+
+  Rect? _sharePositionOrigin(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) {
+      return null;
+    }
+    final origin = box.localToGlobal(Offset.zero);
+    return origin & box.size;
   }
 }
 

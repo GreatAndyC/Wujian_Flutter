@@ -119,29 +119,40 @@ class HomePage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _MetricCard(
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    const spacing = 12.0;
+                    final width = constraints.maxWidth;
+                    final columns = width >= 720
+                        ? 3
+                        : width >= 460
+                        ? 2
+                        : 1;
+                    final itemWidth =
+                        (width - spacing * (columns - 1)) / columns;
+
+                    final cards = [
+                      _MetricCard(
                         label: '物品总数',
                         value: '${controller.items.length}',
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _MetricCard(
+                      _MetricCard(
                         label: '待确认队列',
                         value: '${controller.pendingQueue.length}',
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _MetricCard(
-                        label: '分类数量',
-                        value: '${stats.categories}',
-                      ),
-                    ),
-                  ],
+                      _MetricCard(label: '分类数量', value: '${stats.categories}'),
+                    ];
+
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: cards
+                          .map(
+                            (card) => SizedBox(width: itemWidth, child: card),
+                          )
+                          .toList(),
+                    );
+                  },
                 ),
                 const SizedBox(height: 18),
                 if (controller.latestImage != null)
@@ -217,13 +228,34 @@ class _MetricCard extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 10),
-            Text(value, style: Theme.of(context).textTheme.headlineSmall),
-          ],
+        child: SizedBox(
+          height: 86,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodyMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                      maxLines: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
