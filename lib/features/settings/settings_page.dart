@@ -5,6 +5,7 @@ import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/app_settings_profile.dart';
 import '../../domain/entities/storage_usage_summary.dart';
 import '../../domain/entities/token_usage_stats.dart';
+import '../shell/app_controller.dart';
 import '../shell/app_scope.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -20,6 +21,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _apiKeyController;
   late final TextEditingController _modelController;
   late final TextEditingController _promptController;
+  AppController? _controller;
   String? _boundProfileId;
 
   @override
@@ -34,6 +36,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
+    _controller?.removeListener(_handleControllerChanged);
     _profileNameController.dispose();
     _baseUrlController.dispose();
     _apiKeyController.dispose();
@@ -43,13 +46,23 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextController = AppScope.of(context);
+    if (!identical(_controller, nextController)) {
+      _controller?.removeListener(_handleControllerChanged);
+      _controller = nextController;
+      _controller!.addListener(_handleControllerChanged);
+      _handleControllerChanged();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
+    final controller = _controller ?? AppScope.of(context);
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        _bindProfile(controller.activeProfile);
-
         return ListView(
           key: const ValueKey('settings-page'),
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
@@ -237,6 +250,14 @@ class _SettingsPageState extends State<SettingsPage> {
         );
       },
     );
+  }
+
+  void _handleControllerChanged() {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    _bindProfile(controller.activeProfile);
   }
 
   void _bindProfile(AppSettingsProfile profile) {
