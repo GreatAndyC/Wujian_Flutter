@@ -251,7 +251,11 @@ class _SettingsPageState extends State<SettingsPage> {
     if (controller == null) {
       return;
     }
-    _bindProfile(controller.activeProfile);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _bindProfile(controller.activeProfile);
+      }
+    });
   }
 
   void _bindProfile(AppSettingsProfile profile) {
