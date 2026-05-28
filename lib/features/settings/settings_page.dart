@@ -35,190 +35,197 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    _bindProfile(controller.activeProfile);
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        _bindProfile(controller.activeProfile);
 
-    return ListView(
-      key: const ValueKey('settings-page'),
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-      children: [
-        Text('设置', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 8),
-        Text(
-          '这里可以管理多个多模态识别配置，并查看 token 消耗和本地存储占用。',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 18),
-        _UsageSection(
-          activeStats: controller.activeUsageStats,
-          overallStats: controller.overallUsageStats,
-          activeProfileName: controller.activeProfile.name,
-        ),
-        const SizedBox(height: 18),
-        _StorageSection(
-          usage: controller.storageUsage,
-          isBusy: controller.isBusy,
-          onOptimize: () => controller.optimizeStorage(),
-        ),
-        const SizedBox(height: 18),
-        DropdownButtonFormField<String>(
-          key: ValueKey(controller.activeProfile.id),
-          initialValue: controller.activeProfile.id,
-          decoration: const InputDecoration(labelText: '当前配置'),
-          items: controller.profiles
-              .map(
-                (profile) => DropdownMenuItem(
-                  value: profile.id,
-                  child: Text(profile.name),
-                ),
-              )
-              .toList(),
-          onChanged: (value) async {
-            if (value == null) {
-              return;
-            }
-            await controller.selectProfile(value);
-            setState(() {
-              _boundProfileId = null;
-            });
-          },
-        ),
-        const SizedBox(height: 12),
-        Row(
+        return ListView(
+          key: const ValueKey('settings-page'),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _createProfile,
-                child: const Text('新建配置'),
+            Text('设置', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(
+              '这里可以管理多个多模态识别配置，并查看 token 消耗和本地存储占用。',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 18),
+            _UsageSection(
+              activeStats: controller.activeUsageStats,
+              overallStats: controller.overallUsageStats,
+              activeProfileName: controller.activeProfile.name,
+            ),
+            const SizedBox(height: 18),
+            _StorageSection(
+              usage: controller.storageUsage,
+              isBusy: controller.isBusy,
+              onOptimize: () => controller.optimizeStorage(),
+            ),
+            const SizedBox(height: 18),
+            DropdownButtonFormField<String>(
+              key: ValueKey(controller.activeProfile.id),
+              initialValue: controller.activeProfile.id,
+              decoration: const InputDecoration(labelText: '当前配置'),
+              items: controller.profiles
+                  .map(
+                    (profile) => DropdownMenuItem(
+                      value: profile.id,
+                      child: Text(profile.name),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) async {
+                if (value == null) {
+                  return;
+                }
+                await controller.selectProfile(value);
+                setState(() {
+                  _boundProfileId = null;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _createProfile,
+                    child: const Text('新建配置'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: controller.profiles.length == 1
+                        ? null
+                        : () => controller.deleteProfile(
+                            controller.activeProfile.id,
+                          ),
+                    child: const Text('删除当前配置'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            TextField(
+              controller: _profileNameController,
+              decoration: const InputDecoration(labelText: '配置名称'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey(
+                '${controller.activeProfile.id}-${controller.activeProfile.settings.providerId}',
+              ),
+              initialValue: controller.activeProfile.settings.providerId,
+              decoration: const InputDecoration(labelText: '服务商预设'),
+              items: AiProviderPreset.values
+                  .map(
+                    (preset) => DropdownMenuItem(
+                      value: preset.id,
+                      child: Text(preset.label),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) async {
+                if (value == null) {
+                  return;
+                }
+                await _applyProviderPreset(value);
+              },
+            ),
+            const SizedBox(height: 12),
+            _ProviderPresetCard(
+              preset: AiProviderPreset.fromId(
+                controller.activeProfile.settings.providerId,
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: controller.profiles.length == 1
-                    ? null
-                    : () =>
-                          controller.deleteProfile(controller.activeProfile.id),
-                child: const Text('删除当前配置'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _baseUrlController,
+              decoration: const InputDecoration(
+                labelText: 'Base URL',
+                hintText: '填写兼容 OpenAI chat/completions 的基础地址',
               ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _apiKeyController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'API Key',
+                hintText: '填写对应服务商的密钥',
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey(
+                '${controller.activeProfile.id}-${controller.activeProfile.settings.providerId}-model',
+              ),
+              initialValue: _initialModelValue(
+                controller.activeProfile.settings.providerId,
+                _modelController?.text ?? '',
+              ),
+              decoration: const InputDecoration(labelText: '常用模型'),
+              items: _modelItems(controller.activeProfile.settings.providerId),
+              onChanged: (value) {
+                if (value == null || value.isEmpty) {
+                  return;
+                }
+                setState(() {
+                  _modelController?.text = value;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _modelController,
+              decoration: const InputDecoration(
+                labelText: '模型 ID',
+                hintText:
+                    '例如 gemini-2.5-flash / mimo-v2.5 / openai/gpt-4.1-mini',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _promptController,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: '自定义提示词',
+                hintText: '例如优先按房间、箱号、物品类别输出结构化信息。',
+              ),
+            ),
+            const SizedBox(height: 8),
+            const _CaptureFlowNote(),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: controller.isBusy ? null : () => _save(context),
+                    child: const Text('保存当前配置'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: controller.isBusy
+                        ? null
+                        : () async {
+                            await _save(context, showFeedback: false);
+                            if (!context.mounted) {
+                              return;
+                            }
+                            await controller.testConnection();
+                          },
+                    child: const Text('测试连接'),
+                  ),
+                ),
+              ],
             ),
           ],
-        ),
-        const SizedBox(height: 18),
-        TextField(
-          controller: _profileNameController,
-          decoration: const InputDecoration(labelText: '配置名称'),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          key: ValueKey(
-            '${controller.activeProfile.id}-${controller.activeProfile.settings.providerId}',
-          ),
-          initialValue: controller.activeProfile.settings.providerId,
-          decoration: const InputDecoration(labelText: '服务商预设'),
-          items: AiProviderPreset.values
-              .map(
-                (preset) => DropdownMenuItem(
-                  value: preset.id,
-                  child: Text(preset.label),
-                ),
-              )
-              .toList(),
-          onChanged: (value) async {
-            if (value == null) {
-              return;
-            }
-            await _applyProviderPreset(value);
-          },
-        ),
-        const SizedBox(height: 12),
-        _ProviderPresetCard(
-          preset: AiProviderPreset.fromId(
-            controller.activeProfile.settings.providerId,
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _baseUrlController,
-          decoration: const InputDecoration(
-            labelText: 'Base URL',
-            hintText: '填写兼容 OpenAI chat/completions 的基础地址',
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _apiKeyController,
-          obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'API Key',
-            hintText: '填写对应服务商的密钥',
-          ),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          key: ValueKey(
-            '${controller.activeProfile.id}-${controller.activeProfile.settings.providerId}-model',
-          ),
-          initialValue: _initialModelValue(
-            controller.activeProfile.settings.providerId,
-            _modelController?.text ?? '',
-          ),
-          decoration: const InputDecoration(labelText: '常用模型'),
-          items: _modelItems(controller.activeProfile.settings.providerId),
-          onChanged: (value) {
-            if (value == null || value.isEmpty) {
-              return;
-            }
-            setState(() {
-              _modelController?.text = value;
-            });
-          },
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _modelController,
-          decoration: const InputDecoration(
-            labelText: '模型 ID',
-            hintText: '例如 gemini-2.5-flash / mimo-v2.5 / openai/gpt-4.1-mini',
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _promptController,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            labelText: '自定义提示词',
-            hintText: '例如优先按房间、箱号、物品类别输出结构化信息。',
-          ),
-        ),
-        const SizedBox(height: 8),
-        const _CaptureFlowNote(),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: FilledButton(
-                onPressed: controller.isBusy ? null : () => _save(context),
-                child: const Text('保存当前配置'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: controller.isBusy
-                    ? null
-                    : () async {
-                        await _save(context, showFeedback: false);
-                        if (!context.mounted) {
-                          return;
-                        }
-                        await controller.testConnection();
-                      },
-                child: const Text('测试连接'),
-              ),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 

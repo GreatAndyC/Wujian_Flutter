@@ -11,47 +11,51 @@ class MainShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    final pages = const [HomePage(), ItemsPage(), SettingsPage()];
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final pages = const [HomePage(), ItemsPage(), SettingsPage()];
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final message = controller.message;
+          if (message != null && messenger != null) {
+            messenger
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(content: Text(message)));
+            controller.clearMessage();
+          }
+        });
 
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final message = controller.message;
-      if (message != null && messenger != null) {
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(message)));
-        controller.clearMessage();
-      }
-    });
-
-    return Scaffold(
-      body: SafeArea(
-        child: IndexedStack(
-          index: controller.currentIndex,
-          children: pages,
-        ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: controller.currentIndex,
-        onDestinationSelected: controller.setCurrentIndex,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.camera_alt_outlined),
-            selectedIcon: Icon(Icons.camera_alt),
-            label: '主页',
+        return Scaffold(
+          body: SafeArea(
+            child: IndexedStack(
+              index: controller.currentIndex,
+              children: pages,
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.inventory_2_outlined),
-            selectedIcon: Icon(Icons.inventory_2),
-            label: '视图',
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: controller.currentIndex,
+            onDestinationSelected: controller.setCurrentIndex,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.camera_alt_outlined),
+                selectedIcon: Icon(Icons.camera_alt),
+                label: '主页',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.inventory_2_outlined),
+                selectedIcon: Icon(Icons.inventory_2),
+                label: '视图',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.tune_outlined),
+                selectedIcon: Icon(Icons.tune),
+                label: '设置',
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune),
-            label: '设置',
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

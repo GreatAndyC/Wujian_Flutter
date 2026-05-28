@@ -26,126 +26,132 @@ class _ItemsPageState extends State<ItemsPage> {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    final categories = <String>{
-      '全部',
-      ...controller.items.map((item) => item.category),
-    };
-    final filtered = controller.items.where((item) {
-      final matchesCategory =
-          _selectedCategory == '全部' || item.category == _selectedCategory;
-      final query = _query.trim().toLowerCase();
-      final matchesQuery =
-          query.isEmpty ||
-          item.name.toLowerCase().contains(query) ||
-          item.category.toLowerCase().contains(query) ||
-          item.room.toLowerCase().contains(query) ||
-          item.box.toLowerCase().contains(query);
-      return matchesCategory && matchesQuery;
-    }).toList();
-    _selectedIds.removeWhere(
-      (id) => !controller.items.any((item) => item.id == id),
-    );
-    final isSelecting = _selectedIds.isNotEmpty;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final categories = <String>{
+          '全部',
+          ...controller.items.map((item) => item.category),
+        };
+        final filtered = controller.items.where((item) {
+          final matchesCategory =
+              _selectedCategory == '全部' || item.category == _selectedCategory;
+          final query = _query.trim().toLowerCase();
+          final matchesQuery =
+              query.isEmpty ||
+              item.name.toLowerCase().contains(query) ||
+              item.category.toLowerCase().contains(query) ||
+              item.room.toLowerCase().contains(query) ||
+              item.box.toLowerCase().contains(query);
+          return matchesCategory && matchesQuery;
+        }).toList();
+        _selectedIds.removeWhere(
+          (id) => !controller.items.any((item) => item.id == id),
+        );
+        final isSelecting = _selectedIds.isNotEmpty;
 
-    return CustomScrollView(
-      key: const ValueKey('items-page'),
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return CustomScrollView(
+          key: const ValueKey('items-page'),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        isSelecting ? '已选择 ${_selectedIds.length} 件' : '视图',
-                        style: Theme.of(context).textTheme.headlineSmall,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isSelecting ? '已选择 ${_selectedIds.length} 件' : '视图',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                        ),
+                        if (isSelecting) ...[
+                          IconButton(
+                            onPressed: () => setState(_selectedIds.clear),
+                            icon: const Icon(Icons.close),
+                            tooltip: '取消选择',
+                          ),
+                          IconButton.filledTonal(
+                            onPressed: controller.isBusy
+                                ? null
+                                : () => _deleteSelected(context),
+                            icon: const Icon(Icons.delete_outline),
+                            tooltip: '删除所选',
+                          ),
+                        ] else
+                          FilledButton.icon(
+                            onPressed: controller.isBusy
+                                ? null
+                                : () => _showExportSheet(context, filtered),
+                            icon: const Icon(Icons.ios_share_outlined),
+                            label: const Text('导出'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '按分类、名称、房间快速查看已经确认入库的物品，并导出当前结果。',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 18),
+                    TextField(
+                      onChanged: (value) => setState(() => _query = value),
+                      decoration: const InputDecoration(
+                        hintText: '搜索名称、分类、房间或箱号',
+                        prefixIcon: Icon(Icons.search),
                       ),
                     ),
-                    if (isSelecting) ...[
-                      IconButton(
-                        onPressed: () => setState(_selectedIds.clear),
-                        icon: const Icon(Icons.close),
-                        tooltip: '取消选择',
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      height: 40,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: categories
+                            .map(
+                              (category) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: FilterChip(
+                                  label: Text(category),
+                                  selected: category == _selectedCategory,
+                                  onSelected: (_) => setState(
+                                    () => _selectedCategory = category,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
                       ),
-                      IconButton.filledTonal(
-                        onPressed: controller.isBusy
-                            ? null
-                            : () => _deleteSelected(context),
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: '删除所选',
-                      ),
-                    ] else
-                      FilledButton.icon(
-                        onPressed: controller.isBusy
-                            ? null
-                            : () => _showExportSheet(context, filtered),
-                        icon: const Icon(Icons.ios_share_outlined),
-                        label: const Text('导出'),
-                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '按分类、名称、房间快速查看已经确认入库的物品，并导出当前结果。',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  onChanged: (value) => setState(() => _query = value),
-                  decoration: const InputDecoration(
-                    hintText: '搜索名称、分类、房间或箱号',
-                    prefixIcon: Icon(Icons.search),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  height: 40,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: categories
-                        .map(
-                          (category) => Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: FilterChip(
-                              label: Text(category),
-                              selected: category == _selectedCategory,
-                              onSelected: (_) =>
-                                  setState(() => _selectedCategory = category),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          sliver: filtered.isEmpty
-              ? const SliverToBoxAdapter(child: _EmptyView())
-              : SliverList.builder(
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final item = filtered[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _ItemCard(
-                        item: item,
-                        isSelected: _selectedIds.contains(item.id),
-                        isSelecting: isSelecting,
-                        onSelectionChanged: (selected) =>
-                            _setSelected(item.id, selected),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              sliver: filtered.isEmpty
+                  ? const SliverToBoxAdapter(child: _EmptyView())
+                  : SliverList.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final item = filtered[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _ItemCard(
+                            item: item,
+                            isSelected: _selectedIds.contains(item.id),
+                            isSelecting: isSelecting,
+                            onSelectionChanged: (selected) =>
+                                _setSelected(item.id, selected),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 
