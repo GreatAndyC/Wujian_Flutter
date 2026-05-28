@@ -152,17 +152,7 @@ class _CameraCapturePageState extends State<CameraCapturePage>
                 bottom: _thumbnailDocked ? 118 : 164,
                 width: _thumbnailDocked ? 88 : 140,
                 height: _thumbnailDocked ? 88 : 140,
-                child: _CaptureThumbnail(
-                  image: _lastCapturedPreview!,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => LocalImageViewerPage(
-                        path: _lastCapturedPreview!.path,
-                        title: '最近拍摄',
-                      ),
-                    ),
-                  ),
-                ),
+                child: _CaptureThumbnail(image: _lastCapturedPreview!),
               ),
             Positioned(
               left: 20,
@@ -286,7 +276,7 @@ class _CameraCapturePageState extends State<CameraCapturePage>
     await _cameraController?.dispose();
     final controller = CameraController(
       _cameras[index],
-      ResolutionPreset.max,
+      ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
@@ -494,39 +484,31 @@ class _FocusIndicator extends StatelessWidget {
 }
 
 class _CaptureThumbnail extends StatelessWidget {
-  const _CaptureThumbnail({required this.image, required this.onTap});
+  const _CaptureThumbnail({required this.image});
 
   final File image;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.white, width: 2),
         borderRadius: BorderRadius.circular(18),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white, width: 2),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x66000000),
-                blurRadius: 14,
-                offset: Offset(0, 8),
-              ),
-            ],
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 14,
+            offset: Offset(0, 8),
           ),
-          child: LocalImageFrame(
-            path: image.path,
-            width: double.infinity,
-            height: double.infinity,
-            borderRadius: BorderRadius.circular(16),
-            backgroundColor: Colors.black,
-            padding: const EdgeInsets.all(6),
-          ),
-        ),
+        ],
+      ),
+      child: LocalImageFrame(
+        path: image.path,
+        width: double.infinity,
+        height: double.infinity,
+        borderRadius: BorderRadius.circular(16),
+        backgroundColor: Colors.black,
+        padding: const EdgeInsets.all(6),
       ),
     );
   }

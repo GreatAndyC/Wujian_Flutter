@@ -1,31 +1,19 @@
 import 'dart:io';
 
-import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 
 import '../../domain/entities/storage_usage_summary.dart';
 
 class MediaStorageService {
-  static const _maxImageDimension = 1280;
-  static const _jpegQuality = 72;
   static const _maxRetainedExports = 6;
 
   Future<File> persistImage(File source) async {
     final imagesDirectory = await _imagesDirectory();
+    final extension = _normalizedExtension(source.path);
     final target = File(
-      '${imagesDirectory.path}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.jpg',
+      '${imagesDirectory.path}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.$extension',
     );
-
-    final sourceBytes = await source.readAsBytes();
-    final decoded = img.decodeImage(sourceBytes);
-    if (decoded == null) {
-      return source.copy(target.path);
-    }
-
-    final resized = _resizeIfNeeded(decoded);
-    final encoded = img.encodeJpg(resized, quality: _jpegQuality);
-    await target.writeAsBytes(encoded, flush: true);
-    return target;
+    return source.copy(target.path);
   }
 
   Future<StorageUsageSummary> computeUsage() async {
@@ -65,9 +53,7 @@ class MediaStorageService {
     for (final file in imageFiles) {
       if (!referenced.contains(file.path)) {
         await _safeDelete(file);
-        continue;
       }
-      await _recompressIfNeeded(file);
     }
 
     await pruneExports();
@@ -110,39 +96,18 @@ class MediaStorageService {
     return directory;
   }
 
-  img.Image _resizeIfNeeded(img.Image source) {
-    final longerSide = source.width > source.height
-        ? source.width
-        : source.height;
-    if (longerSide <= _maxImageDimension) {
-      return source;
+  String _normalizedExtension(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) {
+      return 'png';
     }
-
-    if (source.width >= source.height) {
-      return img.copyResize(source, width: _maxImageDimension);
+    if (lower.endsWith('.webp')) {
+      return 'webp';
     }
-    return img.copyResize(source, height: _maxImageDimension);
-  }
-
-  Future<void> _recompressIfNeeded(File file) async {
-    final stat = await file.stat();
-    final looksOversized = stat.size > 900 * 1024;
-    final isJpeg =
-        file.path.toLowerCase().endsWith('.jpg') ||
-        file.path.toLowerCase().endsWith('.jpeg');
-    if (!looksOversized && isJpeg) {
-      return;
+    if (lower.endsWith('.jpeg')) {
+      return 'jpeg';
     }
-
-    final bytes = await file.readAsBytes();
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      return;
-    }
-
-    final resized = _resizeIfNeeded(decoded);
-    final encoded = img.encodeJpg(resized, quality: _jpegQuality);
-    await file.writeAsBytes(encoded, flush: true);
+    return 'jpg';
   }
 
   Future<Directory> _imagesDirectory() async {
