@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_theme.dart';
 import '../../domain/entities/item_record.dart';
+import '../../shared/widgets/local_image_frame.dart';
 import '../camera/camera_capture_page.dart';
 import '../items/item_detail_page.dart';
 import '../items/item_editor_sheet.dart';
@@ -272,32 +273,46 @@ class _LatestImageCard extends StatelessWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
-        height: 180,
+        height: 220,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.file(image, fit: BoxFit.cover),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withValues(alpha: 0.04),
-                    Colors.black.withValues(alpha: 0.55),
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
+            LocalImageFrame(
+              path: image.path,
+              height: 220,
+              borderRadius: BorderRadius.circular(0),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      LocalImageViewerPage(path: image.path, title: '最近一次拍摄'),
+                ),
+              ),
+            ),
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.black.withValues(alpha: 0.04),
+                      Colors.black.withValues(alpha: 0.55),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
                 ),
               ),
             ),
             const Positioned(
               left: 18,
               bottom: 18,
-              child: Text(
-                '最近一次拍摄',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+              child: IgnorePointer(
+                child: Text(
+                  '最近一次拍摄',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
@@ -383,7 +398,22 @@ class _PendingItemCard extends StatelessWidget {
                               );
                             }
                           },
-                    child: Text(canConfirm ? '确认' : '识别中'),
+                    child: Text(canConfirm ? '编辑确认' : '识别中'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.tonal(
+                    onPressed: !canConfirm
+                        ? null
+                        : () => controller.confirmPendingItem(
+                            item.copyWith(
+                              queueState: QueueRecognitionState.ready,
+                              recognitionError: '',
+                              updatedAt: DateTime.now(),
+                            ),
+                          ),
+                    child: const Text('直接确认'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -420,14 +450,11 @@ class _PendingThumbnail extends StatelessWidget {
       );
     }
 
-    return ClipRRect(
+    return LocalImageFrame(
+      path: item.imagePath,
+      width: 64,
+      height: 64,
       borderRadius: BorderRadius.circular(18),
-      child: Image.file(
-        File(item.imagePath),
-        width: 64,
-        height: 64,
-        fit: BoxFit.cover,
-      ),
     );
   }
 }
@@ -456,14 +483,11 @@ class _RecentItemCard extends StatelessWidget {
             vertical: 8,
           ),
           leading: imageExists
-              ? ClipRRect(
+              ? LocalImageFrame(
+                  path: item.imagePath,
+                  width: 56,
+                  height: 56,
                   borderRadius: BorderRadius.circular(14),
-                  child: Image.file(
-                    File(item.imagePath),
-                    width: 56,
-                    height: 56,
-                    fit: BoxFit.cover,
-                  ),
                 )
               : CircleAvatar(
                   backgroundColor: AppTheme.mint,

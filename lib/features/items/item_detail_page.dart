@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../domain/entities/item_record.dart';
+import '../../shared/widgets/local_image_frame.dart';
 import '../shell/app_scope.dart';
 import 'item_editor_sheet.dart';
 
@@ -58,12 +59,17 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
           children: [
             if (imageExists)
-              ClipRRect(
+              LocalImageFrame(
+                path: _item.imagePath,
+                height: 240,
                 borderRadius: BorderRadius.circular(28),
-                child: Image.file(
-                  File(_item.imagePath),
-                  height: 240,
-                  fit: BoxFit.cover,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => LocalImageViewerPage(
+                      path: _item.imagePath,
+                      title: _item.name,
+                    ),
+                  ),
                 ),
               ),
             const SizedBox(height: 20),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../domain/entities/item_record.dart';
+import '../../shared/widgets/local_image_frame.dart';
 
 class ItemEditorSheet extends StatefulWidget {
   const ItemEditorSheet({
@@ -237,11 +238,11 @@ class _PreviewImage extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: Image.file(
-        File(path),
+      child: LocalImageFrame(
+        path: path,
         height: 150,
         width: double.infinity,
-        fit: BoxFit.cover,
+        borderRadius: BorderRadius.circular(20),
       ),
     );
   }

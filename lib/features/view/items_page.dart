@@ -6,6 +6,7 @@ import '../../app/theme/app_theme.dart';
 import '../../domain/entities/export_format.dart';
 import '../../domain/entities/export_grouping.dart';
 import '../../domain/entities/item_record.dart';
+import '../../shared/widgets/local_image_frame.dart';
 import '../items/item_detail_page.dart';
 import '../shell/app_controller.dart';
 import '../shell/app_scope.dart';
@@ -520,14 +521,11 @@ class _ItemThumbnail extends StatelessWidget {
       );
     }
 
-    return ClipRRect(
+    return LocalImageFrame(
+      path: item.imagePath,
+      width: 78,
+      height: 78,
       borderRadius: BorderRadius.circular(20),
-      child: Image.file(
-        File(item.imagePath),
-        width: 78,
-        height: 78,
-        fit: BoxFit.cover,
-      ),
     );
   }
 }

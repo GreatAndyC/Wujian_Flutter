@@ -1,30 +1,37 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:icheck/main.dart';
+import 'package:icheck/domain/entities/item_record.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('ItemRecord serializes and deserializes queue state', () {
+    final now = DateTime.parse('2026-05-28T12:00:00.000');
+    final item = ItemRecord(
+      id: 'item-1',
+      name: '马克杯',
+      category: '厨房',
+      quantity: 2,
+      status: ItemStatus.cataloged,
+      imagePath: '/tmp/cup.jpg',
+      description: '白色陶瓷马克杯',
+      parameters: {'容量': '350ml'},
+      notes: '节日礼物',
+      room: '餐厅',
+      box: 'A-01',
+      brand: '无印良品',
+      model: 'MUG-01',
+      color: '白色',
+      material: '陶瓷',
+      createdAt: now,
+      updatedAt: now,
+      queueState: QueueRecognitionState.ready,
+      recognitionError: '',
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    final decoded = ItemRecord.fromJson(item.toJson());
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(decoded.name, item.name);
+    expect(decoded.category, item.category);
+    expect(decoded.status, item.status);
+    expect(decoded.queueState, QueueRecognitionState.ready);
+    expect(decoded.parameters['容量'], '350ml');
   });
 }
