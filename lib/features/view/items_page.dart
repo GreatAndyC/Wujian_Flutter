@@ -155,35 +155,70 @@ class _ItemsPageState extends State<ItemsPage> {
     final controller = AppScope.of(context);
     final choice = await showModalBottomSheet<_ExportChoice>(
       context: context,
+      isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final format in ExportFormat.values)
-              for (final grouping in ExportGrouping.values)
-                for (final destination in ExportDestination.values)
-                  ListTile(
-                    leading: Icon(
-                      destination == ExportDestination.share
-                          ? Icons.ios_share_outlined
-                          : Icons.save_alt_outlined,
-                    ),
-                    title: Text(
-                      '${format.label} · ${grouping.label} · ${_labelForDestination(destination)}',
-                    ),
-                    subtitle: Text(_subtitleFor(grouping)),
-                    onTap: () => Navigator.of(context).pop(
-                      _ExportChoice(
-                        format: format,
-                        grouping: grouping,
-                        destination: destination,
+      builder: (context) {
+        final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.fromLTRB(16, 0, 16, bottomInset + 12),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '导出当前结果',
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '先按格式查看，再选择按分类或按箱子导出，并决定是分享还是保存到本地。',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+                for (final format in ExportFormat.values)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _ExportFormatSection(
+                      format: format,
+                      subtitle: _subtitleForFormat(format),
+                      buildChoices: () sync* {
+                        for (final grouping in ExportGrouping.values) {
+                          for (final destination in ExportDestination.values) {
+                            yield _ExportActionTile(
+                              icon: destination == ExportDestination.share
+                                  ? Icons.ios_share_outlined
+                                  : Icons.save_alt_outlined,
+                              title:
+                                  '${grouping.label} · ${_labelForDestination(destination)}',
+                              subtitle: _subtitleFor(grouping),
+                              onTap: () => Navigator.of(context).pop(
+                                _ExportChoice(
+                                  format: format,
+                                  grouping: grouping,
+                                  destination: destination,
+                                ),
+                              ),
+                            );
+                          }
+                        }
+                      }(),
                     ),
                   ),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
 
     if (choice == null || !context.mounted) {
@@ -242,6 +277,14 @@ class _ItemsPageState extends State<ItemsPage> {
     };
   }
 
+  String _subtitleForFormat(ExportFormat format) {
+    return switch (format) {
+      ExportFormat.pdf => '适合打印、转发和直接查看版式',
+      ExportFormat.excel => '适合继续整理、筛选和做盘点表',
+      ExportFormat.markdown => '适合导入知识库或继续文本编辑',
+    };
+  }
+
   String _labelForDestination(ExportDestination destination) {
     return switch (destination) {
       ExportDestination.share => '分享',
@@ -260,6 +303,90 @@ class _ExportChoice {
   final ExportFormat format;
   final ExportGrouping grouping;
   final ExportDestination destination;
+}
+
+class _ExportFormatSection extends StatelessWidget {
+  const _ExportFormatSection({
+    required this.format,
+    required this.subtitle,
+    required this.buildChoices,
+  });
+
+  final ExportFormat format;
+  final String subtitle;
+  final Iterable<_ExportActionTile> buildChoices;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(_iconForFormat(format)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        format.label,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            for (final choice in buildChoices) choice,
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _iconForFormat(ExportFormat format) {
+    return switch (format) {
+      ExportFormat.pdf => Icons.picture_as_pdf_outlined,
+      ExportFormat.excel => Icons.table_chart_outlined,
+      ExportFormat.markdown => Icons.notes_outlined,
+    };
+  }
+}
+
+class _ExportActionTile extends StatelessWidget {
+  const _ExportActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 2),
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
+    );
+  }
 }
 
 class _ItemCard extends StatelessWidget {

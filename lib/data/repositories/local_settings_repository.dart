@@ -8,7 +8,8 @@ import '../../domain/repositories/settings_repository.dart';
 
 class LocalSettingsRepository implements SettingsRepository {
   static const _settingsKey = 'app_settings_store';
-  static const _apiKeysField = 'volcengine_api_keys';
+  static const _apiKeysField = 'llm_api_keys';
+  static const _legacyApiKeysField = 'volcengine_api_keys';
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
@@ -16,7 +17,9 @@ class LocalSettingsRepository implements SettingsRepository {
   Future<AppSettingsStore> loadSettingsStore() async {
     final preferences = await SharedPreferences.getInstance();
     final rawStore = preferences.getString(_settingsKey);
-    final rawApiKeys = await _secureStorage.read(key: _apiKeysField);
+    final rawApiKeys =
+        await _secureStorage.read(key: _apiKeysField) ??
+        await _secureStorage.read(key: _legacyApiKeysField);
     final apiKeys = rawApiKeys == null || rawApiKeys.isEmpty
         ? <String, String>{}
         : Map<String, String>.from(

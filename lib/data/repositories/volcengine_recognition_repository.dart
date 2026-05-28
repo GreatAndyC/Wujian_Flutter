@@ -6,7 +6,7 @@ import '../../domain/entities/item_record.dart';
 import '../../domain/entities/recognition_result.dart';
 import '../../domain/repositories/recognition_repository.dart';
 
-class VolcengineRecognitionRepository implements RecognitionRepository {
+class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
   static const _defaultPrompt = '''
 你是家庭物品整理助手。请根据图片识别一个主要物品，并严格只返回 JSON，不要包含 markdown。
 
@@ -49,13 +49,12 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
     }
 
     final client = HttpClient();
-    final endpoint = Uri.parse('${settings.baseUrl}/chat/completions');
+    final endpoint = Uri.parse(
+      '${settings.normalizedBaseUrl}/chat/completions',
+    );
     final request = await client.postUrl(endpoint);
     request.headers.contentType = ContentType.json;
-    request.headers.set(
-      HttpHeaders.authorizationHeader,
-      'Bearer ${settings.apiKey}',
-    );
+    _applyHeaders(request, settings);
 
     final prompt = settings.customPrompt.trim().isEmpty
         ? _defaultPrompt
@@ -127,13 +126,12 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
     }
 
     final client = HttpClient();
-    final endpoint = Uri.parse('${settings.baseUrl}/chat/completions');
+    final endpoint = Uri.parse(
+      '${settings.normalizedBaseUrl}/chat/completions',
+    );
     final request = await client.postUrl(endpoint);
     request.headers.contentType = ContentType.json;
-    request.headers.set(
-      HttpHeaders.authorizationHeader,
-      'Bearer ${settings.apiKey}',
-    );
+    _applyHeaders(request, settings);
     request.write(
       jsonEncode({
         'model': settings.model,
@@ -199,7 +197,7 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
       name: '待确认物品',
       category: '待分类',
       quantity: 1,
-      description: '尚未配置火山方舟 API，当前以待确认记录入库。',
+      description: '尚未配置多模态识别 API，当前以待确认记录入库。',
       parameters: {'识别模式': '本地占位'},
       room: '',
       box: '',
@@ -214,5 +212,16 @@ class VolcengineRecognitionRepository implements RecognitionRepository {
       completionTokens: 0,
       totalTokens: 0,
     );
+  }
+
+  void _applyHeaders(HttpClientRequest request, AppSettings settings) {
+    request.headers.set(
+      HttpHeaders.authorizationHeader,
+      'Bearer ${settings.apiKey}',
+    );
+
+    if (settings.providerId == 'openrouter') {
+      request.headers.set('X-Title', '物见');
+    }
   }
 }

@@ -1,168 +1,259 @@
-# iCheck / 物见
+# 物见
 
-物见是一款面向家庭物品整理的 Flutter 应用。它用手机拍照记录物品，通过火山方舟兼容的视觉模型自动识别名称、分类、房间、箱号和物品属性，再把确认后的记录沉淀成本地清单，方便搬家、收纳、找东西和导出盘点表。
+一个面向家庭收纳、搬家整理和物品盘点的开源多模态应用。
 
-## 当前状态
+你拍一张照片，物见会调用兼容 OpenAI `chat/completions` 的视觉模型，尽量自动识别：
 
-- 应用版本：`1.0.2+3`
+- 物品名称
+- 分类
+- 数量
+- 房间
+- 箱号
+- 品牌 / 型号 / 颜色 / 材质
+- 简短描述和备注
+
+识别结果不会直接“黑箱入库”，而是先进入待确认队列，适合真实家庭场景里逐步整理和修正。
+
+## 为什么做这个
+
+家庭物品管理的真正难点，不是做一个表格，而是把“记录”这件事变得足够轻。
+
+物见的目标很简单：
+
+- 拍照比手填更快
+- AI 先给结构化草稿
+- 人再做最后确认
+- 数据留在本地，方便后续搜索、导出、搬家和盘点
+
+## 当前能力
+
+- 单张拍摄识别
+- 连续拍摄，后台逐条识别
+- 待确认队列
+- 已入库物品搜索、筛选、查看
+- 多配置管理
+- 多模型 / 多服务商预设
+- Token 统计
+- 本地存储统计与清理
+- 导出 PDF / Excel / Markdown
+
+## 支持的模型接入方式
+
+物见现在不是绑死某一家服务商，而是走一层通用的 OpenAI-compatible 适配。
+
+设置页内置这些预设：
+
+- 火山方舟
+- OpenRouter
+- 小米 MiMo（按量）
+- 小米 MiMo（Token Plan）
+- Google Gemini
+- Groq
+- 自定义兼容接口
+
+同时会根据当前预设给出常用模型下拉，不需要每次手动输入模型名。
+
+### 推荐测试组合
+
+如果你想一次性把国内主流多模态供应商测一轮，最省事的方式是直接用 `OpenRouter`。
+
+建议优先测试这些模型：
+
+- `xiaomi/mimo-v2.5`
+- `xiaomi/mimo-v2-omni`
+- `qwen/qwen3-vl-8b-instruct`
+- `qwen/qwen3-vl-30b-a3b-instruct`
+- `z-ai/glm-4.5v`
+- `z-ai/glm-5v-turbo`
+- `minimax/minimax-01`
+- `google/gemini-2.5-flash-lite`
+- `google/gemini-2.5-flash`
+- `openai/gpt-4.1-mini`
+
+如果你只想先找一个“便宜、快、还比较稳”的默认选项，可以先试：
+
+- `xiaomi/mimo-v2.5`
+- `qwen/qwen3-vl-8b-instruct`
+- `z-ai/glm-4.5v`
+
+## 截止目前的产品状态
+
+- 版本：`1.0.2+3`
 - Android 包名：`com.wujian.app.icheck`
+- 默认预设：`火山方舟`
 - 默认模型：`doubao-seed-2-0-mini-260428`
-- 默认 Base URL：`https://ark.cn-beijing.volces.com/api/v3`
-- 当前 release 包已经包含 `CAMERA` 和 `INTERNET` 权限。
-- 当前 release 构建使用 debug 签名，仅适合个人安装、测试和 GitHub Release 分发；正式上架前需要配置独立 release keystore。
+- iOS 最低版本：`13.0`
 
-## 功能
+这还是一个偏早期、可用但持续演进中的开源版本。它更适合：
 
-- 单张拍摄：拍完后立即识别，并可进入确认页编辑后入库。
-- 连续拍摄：连续拍多件物品，结果进入待确认队列，后台逐条识别。
-- 待确认队列：识别成功或失败的记录都可以手动确认、编辑或移除。
-- 物品视图：按名称、分类、房间、箱号搜索，按分类筛选。
-- 物品详情：保存名称、分类、数量、状态、描述、房间、箱号、品牌、型号、颜色、材质、备注和图片。
-- 多配置管理：可保存多个模型/API 配置，并切换当前配置。
-- 连接测试：在设置页验证 Base URL、API Key 和模型 ID 是否可用。
-- Token 统计：分别统计当前配置和全部配置的请求数、Prompt tokens、Completion tokens 与 Total tokens。
-- 本地存储统计：查看图片和导出文件占用，并清理未引用的本地媒体。
-- 导出：支持按分类或按箱号导出为 PDF、Excel、Markdown，并调用系统分享。
+- 个人自用
+- 家庭整理
+- 搬家盘点
+- 多模型效果对比
+- 作为视觉结构化录入的二次开发基础
 
-## 安装 Release 包
+## 快速开始
 
-打开手机 USB 调试，连接电脑后执行：
+### Android
 
-```powershell
+如果你已经有 release APK，直接安装即可。
+
+常见安装命令：
+
+```bash
 adb devices
-adb install -r build\app\outputs\flutter-apk\app-arm64-v8a-release.apk
+adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-如果连接了多台设备，先从 `adb devices` 找到设备号，再指定设备安装：
+如果你要自己构建：
 
-```powershell
-adb -s edd87c69 install -r build\app\outputs\flutter-apk\app-arm64-v8a-release.apk
-```
-
-`-r` 表示覆盖安装，不清除应用数据。
-
-## Release 包说明
-
-执行 `flutter build apk --release --split-per-abi` 后会生成三个 release APK。GitHub Release 页面也应该上传这三个文件，用户按手机 CPU 架构下载对应版本即可。
-
-| 文件 | 适用设备 | 说明 |
-| --- | --- | --- |
-| `app-arm64-v8a-release.apk` | 绝大多数现代 Android 手机 | 推荐优先下载。常见于近几年的小米、OPPO、vivo、荣耀、华为、三星、一加等设备。 |
-| `app-armeabi-v7a-release.apk` | 较老的 32 位 Android 手机 | 仅在老设备无法安装 arm64 包时使用。 |
-| `app-x86_64-release.apk` | x86_64 Android 模拟器或少量 x86 设备 | 主要用于电脑上的 Android 模拟器测试。 |
-
-如果不确定手机架构，可以运行：
-
-```powershell
-adb shell getprop ro.product.cpu.abilist
-```
-
-返回结果里包含 `arm64-v8a` 就安装 `app-arm64-v8a-release.apk`。
-
-## 从源码构建
-
-环境要求：
-
-- Flutter stable，Dart SDK 满足 `^3.9.2`
-- Android SDK 和 platform-tools
-- 已连接 Android 真机或模拟器
-
-构建并安装推荐流程：
-
-```powershell
-cd E:\Project\iCheck
-flutter pub get
-flutter build apk --release --split-per-abi
-adb install -r build\app\outputs\flutter-apk\app-arm64-v8a-release.apk
-```
-
-如果在国内网络环境构建，可以指定镜像：
-
-```powershell
-$env:PUB_HOSTED_URL='https://pub.flutter-io.cn'
-$env:FLUTTER_STORAGE_BASE_URL='https://storage.flutter-io.cn'
+```bash
 flutter pub get
 flutter build apk --release --split-per-abi
 ```
 
-## 首次使用
+生成后通常会有三个 APK：
 
-1. 安装 APK 后打开应用，允许相机权限。
-2. 进入“设置”页，填写 Base URL、API Key 和模型 ID。
-3. 点击“测试连接”，确认接口可用。
-4. 回到“主页”，选择单张拍摄或连续拍摄。
-5. 在待确认队列中检查识别结果，编辑后确认入库。
-6. 到“视图”页搜索、筛选或导出清单。
+- `app-arm64-v8a-release.apk`
+- `app-armeabi-v7a-release.apk`
+- `app-x86_64-release.apk`
 
-API Key 会通过 `flutter_secure_storage` 存储在设备安全存储中；普通配置和物品记录保存在本地。
+大多数真机优先安装 `app-arm64-v8a-release.apk`。
 
-## GitHub Release 发布
+### iOS
 
-仓库内已经准备了：
+iOS 不能像 Android 一样直接随便分发安装包。开源版本如果想给别人试用，推荐走：
 
-- `.github/workflows/release.yml`：推送 `v*` tag 时自动构建 split APK，并上传到 GitHub Release。
-- `docs/releases/v1.0.2.md`：`v1.0.2` Release 页面正文，可直接复制到 GitHub Release 描述。
+- 真机自测：`Xcode + Apple ID`
+- 小范围分发：`TestFlight`
 
-发布步骤：
+首次准备：
 
-```powershell
-git tag v1.0.2
-git push origin v1.0.2
+```bash
+flutter pub get
+cd ios
+pod install
+cd ..
+open ios/Runner.xcworkspace
 ```
 
-GitHub Actions 完成后，Release 页面会带上三个 APK 和 `SHA256SUMS.txt`。如果手动发布，也请上传这四个文件。
+注意：
 
-## 常见问题
+- 一定要打开 `ios/Runner.xcworkspace`
+- 不要直接打开 `ios/Runner.xcodeproj`
 
-### SocketFailed host lookup
+在 Xcode 里需要做的事：
 
-如果提示类似：
+- 选择 `Runner`
+- 打开 `Signing & Capabilities`
+- 勾选 `Automatically manage signing`
+- 选择你的 `Team`
+- 确认 `Bundle Identifier` 唯一
 
-```text
-SocketFailed host lookup: 'ark.cn-beijing.volces.com'
+本地验证：
+
+```bash
+flutter build ios --release
 ```
 
-优先检查：
+导出 TestFlight 构建：
 
-- 当前 APK 是否是最新 release 包，旧 release 曾缺少 `android.permission.INTERNET` 权限。
-- 手机是否能访问网络。
-- Base URL 是否写成 `https://ark.cn-beijing.volces.com/api/v3`，不要在末尾重复追加 `/chat/completions`。
-
-### 连接测试失败
-
-- 确认 API Key 有效。
-- 确认模型 ID 已开通并支持视觉输入。
-- 确认手机网络可以访问火山方舟服务。
-- 如果使用代理或公司网络，先切到普通 Wi-Fi 或移动网络重试。
-
-### 覆盖安装失败
-
-如果提示签名不一致，说明手机上已有不同签名的旧包。个人测试时可以先卸载再安装，但这会删除应用本地数据：
-
-```powershell
-adb uninstall com.wujian.app.icheck
-adb install build\app\outputs\flutter-apk\app-arm64-v8a-release.apk
+```bash
+flutter build ipa --release
 ```
+
+## 如何配置并测试多模型
+
+第一次打开 App 后：
+
+1. 进入“设置”
+2. 新建一个配置
+3. 选择服务商预设
+4. 填入 API Key
+5. 从“常用模型”下拉选择模型
+6. 点击“测试连接”
+7. 回到首页拍一张相同的测试图片
+
+为了横向对比不同模型，建议你每次都用同一组图片，观察这些维度：
+
+- 名称是否准确
+- 分类是否稳定
+- 中文表达是否自然
+- OCR 能力如何
+- 是否会乱猜房间 / 箱号
+- 速度如何
+- Token 消耗是否可接受
+
+### 用 OpenRouter 测国内主流多模态
+
+推荐这样配：
+
+- 服务商预设：`OpenRouter`
+- Base URL：自动填充
+- API Key：你的 OpenRouter Key
+- 模型：从下拉里依次切换
+
+建议测试顺序：
+
+1. `xiaomi/mimo-v2.5`
+2. `qwen/qwen3-vl-8b-instruct`
+3. `z-ai/glm-4.5v`
+4. `minimax/minimax-01`
+5. `xiaomi/mimo-v2-omni`
+6. `qwen/qwen3-vl-30b-a3b-instruct`
+7. `z-ai/glm-5v-turbo`
+
+## 数据与隐私
+
+- API Key 使用 `flutter_secure_storage` 存储
+- 普通配置、物品记录、导出文件保存在本地
+- 图片会保存在本地，并参与导出
+- 具体图片是否上传到第三方模型服务，取决于你当前选用的模型服务商
+
+如果你对隐私比较敏感，建议：
+
+- 使用你信任的供应商
+- 使用单独 API Key
+- 定期清理本地图片与导出文件
+
+## 技术栈
+
+- Flutter
+- Dart
+- `camera`
+- `flutter_secure_storage`
+- `shared_preferences`
+- `pdf`
+- `excel`
+- `share_plus`
 
 ## 项目结构
 
 ```text
 lib/
-  app/                  应用入口、主题和组合根
-  data/repositories/    本地存储、设置、识别和 token 统计实现
-  data/services/        PDF、Excel、Markdown 导出和媒体存储服务
-  domain/entities/      物品、配置、导出格式、统计等领域对象
+  app/                  应用入口
+  data/repositories/    设置、本地存储、识别、统计
+  data/services/        图片存储、导出服务
+  domain/entities/      领域对象
   domain/repositories/  仓储接口
-  features/home/        首页、拍摄和待确认队列
-  features/items/       物品详情和编辑表单
-  features/settings/    API 配置、token 统计和存储管理
-  features/shell/       AppController、作用域和主导航
-  features/view/        物品视图、搜索、筛选和导出入口
+  features/home/        拍摄、待确认队列
+  features/items/       物品详情与编辑
+  features/settings/    配置、Token、存储管理
+  features/view/        搜索、筛选、导出
 ```
 
-## 开发命令
+## 本地开发
 
-```powershell
+环境要求：
+
+- Flutter stable
+- Dart SDK 满足 `^3.9.2`
+- Android SDK
+- iOS 开发时需要 Xcode 和 CocoaPods
+
+常用命令：
+
+```bash
 flutter pub get
 dart format lib
 dart analyze lib
@@ -170,11 +261,86 @@ flutter test
 flutter build apk --release --split-per-abi
 ```
 
-## 发布前检查清单
+## 常见问题
 
-- `android/app/src/main/AndroidManifest.xml` 包含 `CAMERA` 和 `INTERNET` 权限。
-- `pubspec.yaml` 中的 `version` 已更新。
-- `docs/releases/` 中的发布说明已更新。
-- 已执行 `flutter build apk --release --split-per-abi`。
-- 已在真机上安装 `app-arm64-v8a-release.apk` 并完成一次连接测试。
-- GitHub Release 上传了三个 APK 和 `SHA256SUMS.txt`。
+### 1. `pod install` 之后 Xcode 打开很慢或者看起来卡死
+
+先确认你打开的是 `Runner.xcworkspace`。
+
+如果还是异常，优先检查：
+
+- `~/Library/Developer/Xcode/DerivedData` 是否需要清理
+- `~/Library/Developer/Xcode/UserData/Provisioning Profiles/` 下是否有损坏的描述文件
+- Xcode 当前登录的 Apple ID / Team 是否正常
+
+### 2. 连接测试失败
+
+优先检查：
+
+- API Key 是否有效
+- 模型是否真的支持视觉输入
+- Base URL 是否填写正确
+- 当前网络是否能访问对应服务商
+
+### 3. 安装 Android APK 提示签名不一致
+
+说明手机里已经装过不同签名的旧版本，可以先卸载再安装：
+
+```bash
+adb uninstall com.wujian.app.icheck
+adb install build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+```
+
+注意：卸载会删除本地数据。
+
+## 发布
+
+仓库里已经准备了 GitHub Release 工作流：
+
+- `.github/workflows/release.yml`
+
+推送 `v*` tag 后可自动构建 Android release 产物。
+
+示例：
+
+```bash
+git tag v1.0.2
+git push origin v1.0.2
+```
+
+如果手动发 Release，建议至少附带：
+
+- 三个 Android APK
+- `SHA256SUMS.txt`
+- 对应版本说明
+
+## 路线图
+
+接下来值得继续做的方向：
+
+- 一键生成多模型测试配置
+- 同图多模型对比视图
+- 更细的识别模板和结构化 schema
+- 更强的 OCR / 文档类物品识别
+- iOS TestFlight 发布流程打磨
+- 更完整的开源产品介绍页和截图
+
+## 许可证
+
+当前仓库里还没有看到明确的开源许可证文件。
+
+如果你打算公开发布，建议尽快补一个 `LICENSE`，例如：
+
+- `MIT`
+- `Apache-2.0`
+- `GPL-3.0`
+
+## 致谢
+
+这个项目的核心价值，来自这些基础能力的组合：
+
+- Flutter 的跨平台开发体验
+- 多模态大模型的视觉理解能力
+- 开源生态对个人产品和小工具的低门槛支持
+
+如果你正在做家庭整理、搬家盘点、物品资产管理，欢迎直接拿这个项目继续改。

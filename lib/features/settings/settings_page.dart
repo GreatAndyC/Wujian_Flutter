@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../domain/entities/ai_provider_preset.dart';
 import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/app_settings_profile.dart';
 import '../../domain/entities/storage_usage_summary.dart';
@@ -43,7 +44,7 @@ class _SettingsPageState extends State<SettingsPage> {
         Text('设置', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(
-          '这里可以管理多个豆包识别配置，并查看 token 消耗和本地存储占用。',
+          '这里可以管理多个多模态识别配置，并查看 token 消耗和本地存储占用。',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 18),
@@ -108,11 +109,39 @@ class _SettingsPageState extends State<SettingsPage> {
           decoration: const InputDecoration(labelText: '配置名称'),
         ),
         const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          key: ValueKey(
+            '${controller.activeProfile.id}-${controller.activeProfile.settings.providerId}',
+          ),
+          initialValue: controller.activeProfile.settings.providerId,
+          decoration: const InputDecoration(labelText: '服务商预设'),
+          items: AiProviderPreset.values
+              .map(
+                (preset) => DropdownMenuItem(
+                  value: preset.id,
+                  child: Text(preset.label),
+                ),
+              )
+              .toList(),
+          onChanged: (value) async {
+            if (value == null) {
+              return;
+            }
+            await _applyProviderPreset(value);
+          },
+        ),
+        const SizedBox(height: 12),
+        _ProviderPresetCard(
+          preset: AiProviderPreset.fromId(
+            controller.activeProfile.settings.providerId,
+          ),
+        ),
+        const SizedBox(height: 12),
         TextField(
           controller: _baseUrlController,
           decoration: const InputDecoration(
             labelText: 'Base URL',
-            hintText: 'https://ark.cn-beijing.volces.com/api/v3',
+            hintText: '填写兼容 OpenAI chat/completions 的基础地址',
           ),
         ),
         const SizedBox(height: 12),
@@ -121,15 +150,35 @@ class _SettingsPageState extends State<SettingsPage> {
           obscureText: true,
           decoration: const InputDecoration(
             labelText: 'API Key',
-            hintText: 'ARK_API_KEY',
+            hintText: '填写对应服务商的密钥',
           ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          key: ValueKey(
+            '${controller.activeProfile.id}-${controller.activeProfile.settings.providerId}-model',
+          ),
+          initialValue: _initialModelValue(
+            controller.activeProfile.settings.providerId,
+            _modelController?.text ?? '',
+          ),
+          decoration: const InputDecoration(labelText: '常用模型'),
+          items: _modelItems(controller.activeProfile.settings.providerId),
+          onChanged: (value) {
+            if (value == null || value.isEmpty) {
+              return;
+            }
+            setState(() {
+              _modelController?.text = value;
+            });
+          },
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _modelController,
           decoration: const InputDecoration(
             labelText: '模型 ID',
-            hintText: 'doubao-seed-2-0-mini-260428',
+            hintText: '例如 gemini-2.5-flash / mimo-v2.5 / openai/gpt-4.1-mini',
           ),
         ),
         const SizedBox(height: 12),
@@ -192,6 +241,58 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Future<void> _applyProviderPreset(String providerId) async {
+    final preset = AiProviderPreset.fromId(providerId);
+    setState(() {
+      _baseUrlController?.text = preset.baseUrl;
+      _modelController?.text = preset.defaultModel;
+    });
+
+    final controller = AppScope.of(context);
+    final profile = controller.activeProfile;
+    await controller.saveProfile(
+      profileId: profile.id,
+      profileName: _profileNameController!.text.trim().isEmpty
+          ? profile.name
+          : _profileNameController!.text.trim(),
+      settings: AppSettings(
+        providerId: providerId,
+        baseUrl: preset.baseUrl,
+        apiKey: _apiKeyController!.text.trim(),
+        model: preset.defaultModel,
+        customPrompt: _promptController!.text.trim(),
+      ),
+    );
+  }
+
+  List<DropdownMenuItem<String>> _modelItems(String providerId) {
+    final preset = AiProviderPreset.fromId(providerId);
+    final models = [
+      ...preset.recommendedModels,
+      if ((_modelController?.text.trim().isNotEmpty ?? false) &&
+          !preset.recommendedModels.contains(_modelController!.text.trim()))
+        _modelController!.text.trim(),
+    ];
+
+    if (models.isEmpty) {
+      return const [DropdownMenuItem(value: '', child: Text('当前预设没有内置模型候选'))];
+    }
+
+    return models
+        .map((model) => DropdownMenuItem(value: model, child: Text(model)))
+        .toList();
+  }
+
+  String? _initialModelValue(String providerId, String currentModel) {
+    final preset = AiProviderPreset.fromId(providerId);
+    if (currentModel.trim().isEmpty) {
+      return preset.recommendedModels.isEmpty
+          ? ''
+          : preset.recommendedModels.first;
+    }
+    return currentModel.trim();
+  }
+
   Future<void> _createProfile() async {
     final controller = AppScope.of(context);
     final nameController = TextEditingController(
@@ -238,6 +339,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _save(BuildContext context, {bool showFeedback = true}) async {
     final controller = AppScope.of(context);
     final settings = AppSettings(
+      providerId: controller.activeProfile.settings.providerId,
       baseUrl: _baseUrlController!.text.trim(),
       apiKey: _apiKeyController!.text.trim(),
       model: _modelController!.text.trim(),
@@ -292,6 +394,42 @@ class _UsageSection extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _ProviderPresetCard extends StatelessWidget {
+  const _ProviderPresetCard({required this.preset});
+
+  final AiProviderPreset preset;
+
+  @override
+  Widget build(BuildContext context) {
+    final models = preset.recommendedModels.isEmpty
+        ? '可填写任意兼容模型'
+        : preset.recommendedModels.join(' / ');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(preset.label, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              preset.description,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Text('推荐模型：$models'),
+            if (preset.note.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(preset.note, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

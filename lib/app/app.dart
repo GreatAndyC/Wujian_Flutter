@@ -26,7 +26,7 @@ class WujianApp extends StatelessWidget {
       settingsRepository: LocalSettingsRepository(),
       itemRepository: LocalItemRepository(),
       pendingQueueRepository: LocalPendingQueueRepository(),
-      recognitionRepository: VolcengineRecognitionRepository(),
+      recognitionRepository: OpenAiCompatibleRecognitionRepository(),
       tokenUsageRepository: LocalTokenUsageRepository(),
       pdfExportService: PdfExportService(mediaStorageService),
       excelExportService: ExcelExportService(mediaStorageService),
