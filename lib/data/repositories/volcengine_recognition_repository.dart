@@ -128,21 +128,16 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
     final usage = decoded['usage'] as Map<String, dynamic>? ?? const {};
     final message =
         choices.first['message'] as Map<String, dynamic>? ?? const {};
-    final content = message['content'];
-    final text = switch (content) {
-      String value => value,
-      List<dynamic> value =>
-        value
-            .map(
-              (entry) => entry is Map<String, dynamic> ? entry['text'] : null,
-            )
-            .whereType<String>()
-            .join('\n'),
-      _ => '',
-    };
+    final text = _extractMessageText(
+      message: message,
+      choice: choices.first,
+      root: decoded,
+    );
 
     if (text.trim().isEmpty) {
-      throw const FormatException('识别响应缺少内容');
+      throw FormatException(
+        '识别响应缺少内容：${_compactResponseSnippet(responseBody)}',
+      );
     }
 
     return _parseResult(text, usage);
@@ -292,6 +287,111 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
     }
     // Xiaomi image understanding currently requires a vision-capable model.
     return 'mimo-v2.5';
+  }
+
+  String _extractMessageText({
+    required Map<String, dynamic> message,
+    required dynamic choice,
+    required Map<String, dynamic> root,
+  }) {
+    final content = message['content'];
+    final textFromContent = _extractTextFromUnknown(content);
+    if (textFromContent.trim().isNotEmpty) {
+      return textFromContent;
+    }
+
+    final directMessageFields = [
+      message['text'],
+      message['output_text'],
+      message['reasoning_content'],
+      message['refusal'],
+    ];
+    for (final field in directMessageFields) {
+      final text = _extractTextFromUnknown(field);
+      if (text.trim().isNotEmpty) {
+        return text;
+      }
+    }
+
+    if (choice is Map<String, dynamic>) {
+      final text = _extractTextFromUnknown(choice['text']);
+      if (text.trim().isNotEmpty) {
+        return text;
+      }
+    }
+
+    final rootLevelCandidates = [
+      root['output_text'],
+      root['response'],
+      root['text'],
+    ];
+    for (final candidate in rootLevelCandidates) {
+      final text = _extractTextFromUnknown(candidate);
+      if (text.trim().isNotEmpty) {
+        return text;
+      }
+    }
+
+    return '';
+  }
+
+  String _extractTextFromUnknown(dynamic value) {
+    if (value == null) {
+      return '';
+    }
+    if (value is String) {
+      return value;
+    }
+    if (value is List) {
+      return value
+          .map((entry) {
+            if (entry is String) {
+              return entry;
+            }
+            if (entry is Map<String, dynamic>) {
+              final candidates = [
+                entry['text'],
+                entry['output_text'],
+                entry['content'],
+                entry['reasoning_content'],
+                entry['refusal'],
+              ];
+              for (final candidate in candidates) {
+                final text = _extractTextFromUnknown(candidate);
+                if (text.trim().isNotEmpty) {
+                  return text;
+                }
+              }
+            }
+            return '';
+          })
+          .where((entry) => entry.trim().isNotEmpty)
+          .join('\n');
+    }
+    if (value is Map<String, dynamic>) {
+      final candidates = [
+        value['text'],
+        value['output_text'],
+        value['content'],
+        value['reasoning_content'],
+        value['refusal'],
+      ];
+      for (final candidate in candidates) {
+        final text = _extractTextFromUnknown(candidate);
+        if (text.trim().isNotEmpty) {
+          return text;
+        }
+      }
+    }
+    return '';
+  }
+
+  String _compactResponseSnippet(String responseBody) {
+    final compact = responseBody.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.length <= 240) {
+      return compact;
+    }
+    return '${compact.substring(0, 240)}...';
   }
 
   Map<String, String> _normalizeParametersForCategory({

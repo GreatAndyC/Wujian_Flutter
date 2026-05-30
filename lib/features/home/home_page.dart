@@ -460,7 +460,9 @@ class _PendingItemCard extends StatelessWidget {
     final canConfirm =
         item.queueState == QueueRecognitionState.ready ||
         item.queueState == QueueRecognitionState.failed;
-    final canRetry = item.queueState == QueueRecognitionState.failed;
+    final canRetry =
+        item.queueState == QueueRecognitionState.ready ||
+        item.queueState == QueueRecognitionState.failed;
 
     return Card(
       child: Padding(
