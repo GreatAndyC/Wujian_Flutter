@@ -547,7 +547,7 @@ class AppController extends ChangeNotifier {
 
   int _pendingQueueConcurrencyLimit() {
     return switch (settings.providerId) {
-      'volcengine' => 5,
+      'volcengine' => 30,
       'xiaomi-payg' => 1,
       'xiaomi-token-plan' => 1,
       _ => 2,
