@@ -145,7 +145,7 @@ class PdfExportService {
       ),
       cellStyle: const pw.TextStyle(fontSize: 10),
       cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-      headers: const ['名称', '分类', '房间', '箱号', '数量', '状态'],
+      headers: const ['名称', '分类', '房间', '箱号', '数量', '状态', '参数摘要'],
       data: items
           .map(
             (item) => [
@@ -155,6 +155,7 @@ class PdfExportService {
               item.box.trim().isEmpty ? '未分配' : item.box,
               '${item.quantity}',
               item.status.label,
+              item.parameterSummary(maxEntries: 4),
             ],
           )
           .toList(),
@@ -199,6 +200,17 @@ class PdfExportService {
             maxLines: 2,
             style: const pw.TextStyle(fontSize: 9),
           ),
+          if (item.parameterSummary(maxEntries: 3).trim().isNotEmpty) ...[
+            pw.SizedBox(height: 4),
+            pw.Text(
+              item.parameterSummary(maxEntries: 3),
+              maxLines: 3,
+              style: pw.TextStyle(
+                fontSize: 8,
+                color: PdfColor.fromInt(0xFF5F6B67),
+              ),
+            ),
+          ],
         ],
       ),
     );

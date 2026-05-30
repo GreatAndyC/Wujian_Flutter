@@ -166,4 +166,58 @@ class ItemRecord {
       'recognitionError': recognitionError,
     };
   }
+
+  Map<String, String> get visibleParameters {
+    final filtered = <String, String>{};
+    for (final entry in parameters.entries) {
+      final key = entry.key.trim();
+      final value = entry.value.trim();
+      if (key.isEmpty || value.isEmpty) {
+        continue;
+      }
+      if (key == 'rawResponse') {
+        continue;
+      }
+      filtered[key] = value;
+    }
+    return filtered;
+  }
+
+  String parameterSummary({int maxEntries = 3}) {
+    final entries = _orderedVisibleParameters.take(maxEntries);
+    if (entries.isEmpty) {
+      return '';
+    }
+    return entries.map((entry) => '${entry.key}：${entry.value}').join('；');
+  }
+
+  Iterable<MapEntry<String, String>> get _orderedVisibleParameters {
+    final visible = visibleParameters;
+    final ordered = <MapEntry<String, String>>[];
+    const preferredKeys = [
+      '书名',
+      '作者',
+      '出版社',
+      '副标题',
+      '丛书/系列',
+      '卷册信息',
+      '版次',
+      '用途标签',
+      '是否教材/教辅',
+      '适读对象',
+      '识别状态',
+    ];
+    for (final key in preferredKeys) {
+      final value = visible[key];
+      if (value != null) {
+        ordered.add(MapEntry(key, value));
+      }
+    }
+    for (final entry in visible.entries) {
+      if (!ordered.any((item) => item.key == entry.key)) {
+        ordered.add(entry);
+      }
+    }
+    return ordered;
+  }
 }

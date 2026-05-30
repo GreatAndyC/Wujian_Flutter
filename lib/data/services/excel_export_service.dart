@@ -35,6 +35,7 @@ class ExcelExportService {
       TextCellValue('箱号'),
       TextCellValue('数量'),
       TextCellValue('状态'),
+      TextCellValue('参数摘要'),
       TextCellValue('详情'),
     ]);
 
@@ -57,6 +58,7 @@ class ExcelExportService {
         TextCellValue('箱号'),
         TextCellValue('数量'),
         TextCellValue('状态'),
+        TextCellValue('参数摘要'),
         TextCellValue('详情'),
       ]);
       for (final item in entry.value) {
@@ -86,6 +88,7 @@ class ExcelExportService {
       TextCellValue(item.box.trim().isEmpty ? '未分配' : item.box),
       IntCellValue(item.quantity),
       TextCellValue(item.status.label),
+      TextCellValue(item.parameterSummary(maxEntries: 4)),
       TextCellValue(item.description),
     ];
   }

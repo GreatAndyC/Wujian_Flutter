@@ -26,12 +26,12 @@ class MarkdownExportService {
       buffer
         ..writeln('## ${entry.key}')
         ..writeln()
-        ..writeln('| 名称 | 分类 | 房间 | 箱号 | 数量 | 状态 | 详情 |')
-        ..writeln('| --- | --- | --- | --- | ---: | --- | --- |');
+        ..writeln('| 名称 | 分类 | 房间 | 箱号 | 数量 | 状态 | 参数摘要 | 详情 |')
+        ..writeln('| --- | --- | --- | --- | ---: | --- | --- | --- |');
 
       for (final item in entry.value) {
         buffer.writeln(
-          '| ${_escape(item.name)} | ${_escape(item.category)} | ${_escape(item.room.trim().isEmpty ? '未分配' : item.room)} | ${_escape(item.box.trim().isEmpty ? '未分配' : item.box)} | ${item.quantity} | ${_escape(item.status.label)} | ${_escape(item.description)} |',
+          '| ${_escape(item.name)} | ${_escape(item.category)} | ${_escape(item.room.trim().isEmpty ? '未分配' : item.room)} | ${_escape(item.box.trim().isEmpty ? '未分配' : item.box)} | ${item.quantity} | ${_escape(item.status.label)} | ${_escape(item.parameterSummary(maxEntries: 4))} | ${_escape(item.description)} |',
         );
       }
 

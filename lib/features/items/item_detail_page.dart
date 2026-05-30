@@ -39,7 +39,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       '颜色': _item.color,
       '材质': _item.material,
       '状态': _item.status.label,
-      ..._item.parameters,
+      ..._item.visibleParameters,
     }..removeWhere((key, value) => value.trim().isEmpty);
 
     return Scaffold(

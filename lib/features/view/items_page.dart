@@ -485,6 +485,7 @@ class _ItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    final parameterSummary = item.parameterSummary();
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(28),
@@ -582,6 +583,17 @@ class _ItemCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
+                    if (parameterSummary.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        parameterSummary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.black.withValues(alpha: 0.62),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
