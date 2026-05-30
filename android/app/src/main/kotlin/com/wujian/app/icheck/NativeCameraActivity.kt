@@ -515,6 +515,7 @@ class NativeCameraActivity : Activity() {
                 val file = File(cacheDir, "capture-${System.currentTimeMillis()}.jpg")
                 FileOutputStream(file).use { it.write(bytes) }
                 capturedPaths += file.absolutePath
+                MainActivity.emitNativeCameraCapture(file.absolutePath)
                 runOnUiThread {
                     statusView.visibility = View.VISIBLE
                     statusView.text = "已加入 ${capturedPaths.size} 张，后台识别中"

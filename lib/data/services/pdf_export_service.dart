@@ -170,7 +170,6 @@ class PdfExportService {
       spacing: 12,
       runSpacing: 12,
       children: items
-          .take(12)
           .map((item) => _buildImageCard(item, imageAssets[_imageKey(item)]))
           .toList(),
     );

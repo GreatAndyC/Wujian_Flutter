@@ -8,10 +8,20 @@ import android.hardware.camera2.CameraManager
 import android.net.Uri
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        private const val captureEventChannelName = "com.wujian.app.icheck/native_camera_events"
+        private var captureEventSink: EventChannel.EventSink? = null
+
+        fun emitNativeCameraCapture(path: String) {
+            captureEventSink?.success(path)
+        }
+    }
+
     private val channelName = "com.wujian.app.icheck/file_saver"
     private val saveFileRequestCode = 9327
     private val nativeCameraRequestCode = 9328
@@ -29,6 +39,18 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, captureEventChannelName)
+            .setStreamHandler(
+                object : EventChannel.StreamHandler {
+                    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                        captureEventSink = events
+                    }
+
+                    override fun onCancel(arguments: Any?) {
+                        captureEventSink = null
+                    }
+                },
+            )
     }
 
     private fun handleSaveFile(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {

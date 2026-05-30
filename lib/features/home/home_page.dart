@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -17,6 +18,9 @@ class HomePage extends StatelessWidget {
   static const MethodChannel _nativeCameraChannel = MethodChannel(
     'com.wujian.app.icheck/file_saver',
   );
+  static const EventChannel _nativeCameraEvents = EventChannel(
+    'com.wujian.app.icheck/native_camera_events',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +32,12 @@ class HomePage extends StatelessWidget {
           controller.items,
           controller.pendingQueue,
         );
+        final readyPendingCount = controller.pendingQueue
+            .where((item) => item.queueState == QueueRecognitionState.ready)
+            .length;
+        final failedPendingCount = controller.pendingQueue
+            .where((item) => item.queueState == QueueRecognitionState.failed)
+            .length;
 
         return CustomScrollView(
           key: const ValueKey('home-page'),
@@ -177,6 +187,47 @@ class HomePage extends StatelessWidget {
                           : '点开可确认的条目后再入库。',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _QueueStatChip(
+                          icon: Icons.layers_outlined,
+                          label: '共 ${controller.pendingQueue.length} 项',
+                        ),
+                        _QueueStatChip(
+                          icon: Icons.check_circle_outline,
+                          label: '可添加 $readyPendingCount 项',
+                        ),
+                        if (failedPendingCount > 0)
+                          _QueueStatChip(
+                            icon: Icons.error_outline,
+                            label: '失败 $failedPendingCount 项',
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        FilledButton.tonalIcon(
+                          onPressed: controller.isBusy || readyPendingCount == 0
+                              ? null
+                              : controller.confirmAllReadyPendingItems,
+                          icon: const Icon(Icons.playlist_add_check_circle_outlined),
+                          label: const Text('全部添加'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: controller.isBusy || failedPendingCount == 0
+                              ? null
+                              : controller.retryAllFailedPendingItems,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('全部失败重新识别'),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -233,21 +284,35 @@ class HomePage extends StatelessWidget {
   }) async {
     final controller = AppScope.of(context);
     if (Platform.isAndroid) {
-      final rawPaths =
-          await _nativeCameraChannel.invokeMethod<List<dynamic>>(
-            'openNativeCamera',
-            {
-              'captureBox': captureBox,
-              'singleCapture': singleCapture,
-            },
-          ) ??
-          const [];
-      for (final rawPath in rawPaths) {
-        final path = rawPath?.toString() ?? '';
-        if (path.trim().isEmpty) {
-          continue;
+      final streamedPaths = <String>{};
+      final subscription = _nativeCameraEvents.receiveBroadcastStream().listen((
+        event,
+      ) async {
+        final path = event?.toString() ?? '';
+        if (path.trim().isEmpty || !streamedPaths.add(path)) {
+          return;
         }
         await controller.queueCapturedFile(File(path), box: captureBox);
+      });
+      try {
+        final rawPaths =
+            await _nativeCameraChannel.invokeMethod<List<dynamic>>(
+              'openNativeCamera',
+              {
+                'captureBox': captureBox,
+                'singleCapture': singleCapture,
+              },
+            ) ??
+            const [];
+        for (final rawPath in rawPaths) {
+          final path = rawPath?.toString() ?? '';
+          if (path.trim().isEmpty || !streamedPaths.add(path)) {
+            continue;
+          }
+          await controller.queueCapturedFile(File(path), box: captureBox);
+        }
+      } finally {
+        await subscription.cancel();
       }
       return;
     }
@@ -448,6 +513,33 @@ class _MetricCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _QueueStatChip extends StatelessWidget {
+  const _QueueStatChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppTheme.ink),
+          const SizedBox(width: 6),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
       ),
     );
   }

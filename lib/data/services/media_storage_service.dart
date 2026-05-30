@@ -1,19 +1,34 @@
 import 'dart:io';
 
+import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 
 import '../../domain/entities/storage_usage_summary.dart';
 
 class MediaStorageService {
   static const _maxRetainedExports = 6;
+  static const _maxImageDimension = 2048;
+  static const _jpegQuality = 82;
 
   Future<File> persistImage(File source) async {
     final imagesDirectory = await _imagesDirectory();
-    final extension = _normalizedExtension(source.path);
+    final extension = _preferredOutputExtension(source.path);
     final target = File(
       '${imagesDirectory.path}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.$extension',
     );
-    return source.copy(target.path);
+    final bytes = await source.readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) {
+      final copied = await source.copy(target.path);
+      await _cleanupSource(source, copied.path);
+      return copied;
+    }
+
+    final resized = _resizeIfNeeded(decoded);
+    final encoded = img.encodeJpg(resized, quality: _jpegQuality);
+    await target.writeAsBytes(encoded, flush: true);
+    await _cleanupSource(source, target.path);
+    return target;
   }
 
   Future<StorageUsageSummary> computeUsage() async {
@@ -87,6 +102,18 @@ class MediaStorageService {
     }
   }
 
+  Future<void> clearTransientCache() async {
+    final tempDirectory = await getTemporaryDirectory();
+    final tempFiles = await _listFiles(tempDirectory);
+    for (final file in tempFiles) {
+      final name = file.uri.pathSegments.isEmpty ? '' : file.uri.pathSegments.last;
+      if (name.startsWith('capture-') && name.endsWith('.jpg')) {
+        await _safeDelete(file);
+      }
+    }
+    await pruneExports();
+  }
+
   Future<Directory> exportsDirectory() async {
     final tempDirectory = await getTemporaryDirectory();
     final directory = Directory(
@@ -96,18 +123,33 @@ class MediaStorageService {
     return directory;
   }
 
-  String _normalizedExtension(String path) {
-    final lower = path.toLowerCase();
-    if (lower.endsWith('.png')) {
-      return 'png';
-    }
-    if (lower.endsWith('.webp')) {
-      return 'webp';
-    }
-    if (lower.endsWith('.jpeg')) {
-      return 'jpeg';
-    }
+  String _preferredOutputExtension(String path) {
     return 'jpg';
+  }
+
+  img.Image _resizeIfNeeded(img.Image image) {
+    final width = image.width;
+    final height = image.height;
+    final maxDimension = width > height ? width : height;
+    if (maxDimension <= _maxImageDimension) {
+      return image;
+    }
+    if (width >= height) {
+      final targetHeight = (height * _maxImageDimension / width).round();
+      return img.copyResize(
+        image,
+        width: _maxImageDimension,
+        height: targetHeight,
+        interpolation: img.Interpolation.average,
+      );
+    }
+    final targetWidth = (width * _maxImageDimension / height).round();
+    return img.copyResize(
+      image,
+      width: targetWidth,
+      height: _maxImageDimension,
+      interpolation: img.Interpolation.average,
+    );
   }
 
   Future<Directory> _imagesDirectory() async {
@@ -142,6 +184,17 @@ class MediaStorageService {
   Future<void> _safeDelete(File file) async {
     if (await file.exists()) {
       await file.delete();
+    }
+  }
+
+  Future<void> _cleanupSource(File source, String persistedPath) async {
+    final sourcePath = source.path;
+    if (sourcePath == persistedPath) {
+      return;
+    }
+    final tempDirectory = await getTemporaryDirectory();
+    if (sourcePath.startsWith(tempDirectory.path)) {
+      await _safeDelete(source);
     }
   }
 }

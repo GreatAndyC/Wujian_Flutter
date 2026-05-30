@@ -345,6 +345,68 @@ class AppController extends ChangeNotifier {
     unawaited(_processPendingQueue());
   }
 
+  Future<void> confirmAllReadyPendingItems() async {
+    final readyItems = _pendingQueue
+        .where((item) => item.queueState == QueueRecognitionState.ready)
+        .toList();
+    if (readyItems.isEmpty) {
+      return;
+    }
+    await _mutatePendingQueue(() async {
+      final readyIds = readyItems.map((item) => item.id).toSet();
+      _pendingQueue = _pendingQueue
+          .where((entry) => !readyIds.contains(entry.id))
+          .toList();
+      for (final item in readyItems) {
+        final confirmed = item.copyWith(
+          queueState: QueueRecognitionState.ready,
+          recognitionError: '',
+          updatedAt: DateTime.now(),
+        );
+        _items = [confirmed, ..._items.where((entry) => entry.id != confirmed.id)]
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      }
+      await _pendingQueueRepository.savePendingItems(_pendingQueue);
+      await _itemRepository.saveItems(_items);
+      await _refreshStorageUsage();
+      _message = '已批量添加 ${readyItems.length} 项';
+      notifyListeners();
+    });
+  }
+
+  Future<void> retryAllFailedPendingItems() async {
+    final failedItems = _pendingQueue
+        .where((item) => item.queueState == QueueRecognitionState.failed)
+        .toList();
+    if (failedItems.isEmpty) {
+      return;
+    }
+    for (final item in failedItems) {
+      await _replacePendingItem(
+        item.copyWith(
+          queueState: QueueRecognitionState.queued,
+          name: '待识别物品',
+          category: '待分类',
+          description: '等待后台识别',
+          brand: '',
+          model: '',
+          color: '',
+          material: '',
+          notes: '',
+          recognitionError: '',
+          parameters: {
+            if (item.box.trim().isNotEmpty) '来源箱号': item.box.trim(),
+            '识别状态': '排队中',
+          },
+          updatedAt: DateTime.now(),
+        ),
+      );
+    }
+    _message = '已重新识别 ${failedItems.length} 项';
+    notifyListeners();
+    unawaited(_processPendingQueue());
+  }
+
   Future<void> saveItem(ItemRecord item) async {
     _items = [item, ..._items.where((entry) => entry.id != item.id)]
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -372,6 +434,14 @@ class AppController extends ChangeNotifier {
         _message = '已完成存储优化';
       }
     }, keepBusyState: silent);
+  }
+
+  Future<void> clearTransientCache() async {
+    await _runBusy(() async {
+      await _mediaStorageService.clearTransientCache();
+      await _refreshStorageUsage();
+      _message = '已清理临时缓存';
+    });
   }
 
   void clearMessage() {

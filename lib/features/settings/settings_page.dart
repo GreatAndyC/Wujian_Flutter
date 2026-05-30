@@ -95,6 +95,7 @@ class _SettingsPageState extends State<SettingsPage> {
               usage: controller.storageUsage,
               isBusy: controller.isBusy,
               onOptimize: () => controller.optimizeStorage(),
+              onClearCache: () => controller.clearTransientCache(),
             ),
             const SizedBox(height: 18),
             _DropdownField<String>(
@@ -529,11 +530,13 @@ class _StorageSection extends StatelessWidget {
     required this.usage,
     required this.isBusy,
     required this.onOptimize,
+    required this.onClearCache,
   });
 
   final StorageUsageSummary usage;
   final bool isBusy;
   final Future<void> Function() onOptimize;
+  final Future<void> Function() onClearCache;
 
   @override
   Widget build(BuildContext context) {
@@ -546,7 +549,7 @@ class _StorageSection extends StatelessWidget {
             Text('本地存储', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 6),
             Text(
-              '拍照后会压缩保存，导出文件只保留最近几份。',
+              '拍照后会压缩保存；优化存储会清未引用图片和旧导出；清理缓存会清原生临时图和导出缓存。',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 14),
@@ -556,10 +559,21 @@ class _StorageSection extends StatelessWidget {
             _MetricRow(label: '导出占用', value: _formatBytes(usage.exportBytes)),
             _MetricRow(label: '合计', value: _formatBytes(usage.totalBytes)),
             const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: isBusy ? null : onOptimize,
-              icon: const Icon(Icons.cleaning_services_outlined),
-              label: const Text('立即优化存储'),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                FilledButton.icon(
+                  onPressed: isBusy ? null : onOptimize,
+                  icon: const Icon(Icons.cleaning_services_outlined),
+                  label: const Text('立即优化存储'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: isBusy ? null : onClearCache,
+                  icon: const Icon(Icons.layers_clear_outlined),
+                  label: const Text('清理临时缓存'),
+                ),
+              ],
             ),
           ],
         ),
