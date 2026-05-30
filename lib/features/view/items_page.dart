@@ -81,12 +81,32 @@ class _ItemsPageState extends State<ItemsPage> {
                             tooltip: '删除所选',
                           ),
                         ] else
-                          FilledButton.icon(
-                            onPressed: controller.isBusy
-                                ? null
-                                : () => _showExportSheet(context, filtered),
-                            icon: const Icon(Icons.ios_share_outlined),
-                            label: const Text('导出'),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed:
+                                    controller.isBusy || filtered.isEmpty
+                                        ? null
+                                        : () => _deleteAllFiltered(
+                                              context,
+                                              filtered,
+                                            ),
+                                icon: const Icon(Icons.delete_sweep_outlined),
+                                label: const Text('全部删除'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFFB33A3A),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton.icon(
+                                onPressed: controller.isBusy
+                                    ? null
+                                    : () => _showExportSheet(context, filtered),
+                                icon: const Icon(Icons.ios_share_outlined),
+                                label: const Text('导出'),
+                              ),
+                            ],
                           ),
                       ],
                     ),
@@ -266,6 +286,48 @@ class _ItemsPageState extends State<ItemsPage> {
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+    await AppScope.of(context).deleteItemsById(ids);
+    if (mounted) {
+      setState(_selectedIds.clear);
+    }
+  }
+
+  Future<void> _deleteAllFiltered(
+    BuildContext context,
+    List<ItemRecord> filtered,
+  ) async {
+    final ids = filtered.map((item) => item.id).toSet();
+    if (ids.isEmpty) {
+      return;
+    }
+    final scopeText = [
+      if (_selectedCategory != '全部') '分类“$_selectedCategory”',
+      if (_query.trim().isNotEmpty) '搜索“${_query.trim()}”',
+    ].join('，');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除当前视图全部物品'),
+        content: Text(
+          scopeText.isEmpty
+              ? '确定删除当前视图中的全部 ${ids.length} 件物品吗？此操作不可撤销。'
+              : '确定删除当前视图中符合$scopeText的 ${ids.length} 件物品吗？此操作不可撤销。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('全部删除'),
           ),
         ],
       ),
