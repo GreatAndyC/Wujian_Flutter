@@ -438,12 +438,14 @@ class AppController extends ChangeNotifier {
         );
 
         try {
+          final stopwatch = Stopwatch()..start();
           final bytes = await File(queued.imagePath).readAsBytes();
           final recognition = await _recognitionRepository.recognizeItem(
             settings: settings,
             imageBytes: bytes,
             mimeType: _detectMimeType(queued.imagePath),
           );
+          stopwatch.stop();
           _applyUsage(recognition);
           final recognized = recognition.toItem(
             id: queued.id,
@@ -452,6 +454,10 @@ class AppController extends ChangeNotifier {
           );
           await _replacePendingItem(
             recognized.copyWith(
+              parameters: {
+                ...recognized.parameters,
+                '识别用时': _formatRecognitionDuration(stopwatch.elapsed),
+              },
               box: queued.box.trim().isEmpty ? recognized.box : queued.box,
               queueState: QueueRecognitionState.ready,
               recognitionError: '',
@@ -477,6 +483,14 @@ class AppController extends ChangeNotifier {
       _isProcessingQueue = false;
       notifyListeners();
     }
+  }
+
+  String _formatRecognitionDuration(Duration duration) {
+    if (duration.inSeconds >= 1) {
+      final seconds = duration.inMilliseconds / 1000;
+      return '${seconds.toStringAsFixed(seconds >= 10 ? 0 : 1)}秒';
+    }
+    return '${duration.inMilliseconds}毫秒';
   }
 
   void _applyUsage(RecognitionResult recognition) {
