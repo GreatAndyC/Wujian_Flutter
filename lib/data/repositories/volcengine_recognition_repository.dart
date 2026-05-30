@@ -37,6 +37,26 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
 2. quantity 必须是整数。
 3. status 只能是 pending、cataloged、boxed、moved 之一。
 4. 无法确认时，宁可保守，避免编造。
+5. 如果识别结果是书，category 必须填 "书籍"，name 必须优先使用封面可见的书名。
+6. 如果是书籍，请将 parameters 改为书籍专用字段，并尽量只填写封面明确可见的信息：
+{
+  "书名": "封面主标题",
+  "副标题": "",
+  "作者": "",
+  "出版社": "",
+  "丛书/系列": "",
+  "卷册信息": "",
+  "版次": "",
+  "语言": "",
+  "装帧": "",
+  "是否教材/教辅": "是/否",
+  "适读对象": ""
+}
+7. 书籍场景下：
+- brand、model、color、material 默认留空，除非封面明确值得保留。
+- description 用一句话概括这本书，例如题材、用途或阅读对象。
+- notes 只写低置信补充，例如“出版社可能识别不清”。
+8. 只拍封面时，不要编造 ISBN、出版时间、印次、定价、开本、页数等通常需要封底或版权页才能确认的信息。
 ''';
 
   @override
@@ -180,18 +200,28 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
         .replaceAll('```', '')
         .trim();
     final decoded = jsonDecode(normalized) as Map<String, dynamic>;
+    final category = (decoded['category'] as String? ?? '待分类').trim();
     final parameters = Map<String, String>.from(
       (decoded['parameters'] as Map? ?? const {}).map(
         (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
       ),
     )..removeWhere((key, value) => value.trim().isEmpty);
+    final normalizedParameters = _normalizeParametersForCategory(
+      category: category,
+      parameters: parameters,
+    );
+    final normalizedName = _normalizeNameForCategory(
+      category: category,
+      rawName: decoded['name'] as String?,
+      parameters: normalizedParameters,
+    );
 
     return RecognitionResult(
-      name: decoded['name'] as String? ?? '待确认物品',
-      category: decoded['category'] as String? ?? '待分类',
+      name: normalizedName,
+      category: category.isEmpty ? '待分类' : category,
       quantity: (decoded['quantity'] as num?)?.toInt() ?? 1,
       description: decoded['description'] as String? ?? '等待确认识别内容',
-      parameters: parameters,
+      parameters: normalizedParameters,
       room: decoded['room'] as String? ?? '',
       box: decoded['box'] as String? ?? '',
       brand: decoded['brand'] as String? ?? '',
@@ -262,5 +292,60 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
     }
     // Xiaomi image understanding currently requires a vision-capable model.
     return 'mimo-v2.5';
+  }
+
+  Map<String, String> _normalizeParametersForCategory({
+    required String category,
+    required Map<String, String> parameters,
+  }) {
+    if (!_isBookCategory(category)) {
+      return parameters;
+    }
+
+    final normalized = <String, String>{};
+    const orderedBookKeys = [
+      '书名',
+      '副标题',
+      '作者',
+      '出版社',
+      '丛书/系列',
+      '卷册信息',
+      '版次',
+      '语言',
+      '装帧',
+      '是否教材/教辅',
+      '适读对象',
+    ];
+    for (final key in orderedBookKeys) {
+      final value = parameters[key]?.trim();
+      if (value != null && value.isNotEmpty) {
+        normalized[key] = value;
+      }
+    }
+    for (final entry in parameters.entries) {
+      if (!normalized.containsKey(entry.key) && entry.value.trim().isNotEmpty) {
+        normalized[entry.key] = entry.value.trim();
+      }
+    }
+    return normalized;
+  }
+
+  String _normalizeNameForCategory({
+    required String category,
+    required String? rawName,
+    required Map<String, String> parameters,
+  }) {
+    final trimmedName = rawName?.trim() ?? '';
+    if (_isBookCategory(category)) {
+      final title = parameters['书名']?.trim() ?? '';
+      if (title.isNotEmpty) {
+        return title;
+      }
+    }
+    return trimmedName.isEmpty ? '待确认物品' : trimmedName;
+  }
+
+  bool _isBookCategory(String category) {
+    return category.contains('书');
   }
 }
