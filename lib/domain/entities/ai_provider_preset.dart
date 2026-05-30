@@ -53,18 +53,18 @@ class AiProviderPreset {
     baseUrl: 'https://api.xiaomimimo.com/v1',
     defaultModel: 'mimo-v2.5',
     description: '按量计费，直接使用开放平台普通 API Key。',
-    recommendedModels: ['mimo-v2.5', 'mimo-v2-omni', 'mimo-v2-flash'],
-    note: '图像理解建议选 mimo-v2.5 或 mimo-v2-omni。',
+    recommendedModels: ['mimo-v2.5', 'mimo-v2.5-pro', 'mimo-v2-omni'],
+    note: '图片理解仅支持 mimo-v2.5 / mimo-v2-omni；旧的 mimo-v2-pro / mimo-v2-omni 正在下线迁移到 V2.5。',
   );
 
   static const xiaomiTokenPlan = AiProviderPreset(
     id: 'xiaomi-token-plan',
     label: '小米 MiMo（Token Plan）',
-    baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+    baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
     defaultModel: 'mimo-v2.5',
     description: '包月订阅路线，适合有持续调用量时使用。',
-    recommendedModels: ['mimo-v2.5', 'mimo-v2-omni', 'mimo-v2-flash'],
-    note: '需要使用 Token Plan 专属 Base URL 和 API Key。',
+    recommendedModels: ['mimo-v2.5', 'mimo-v2.5-pro', 'mimo-v2-omni'],
+    note: '需要使用控制台显示的专属 Base URL 和 API Key；图片理解仍应选 mimo-v2.5 / mimo-v2-omni。',
   );
 
   static const gemini = AiProviderPreset(

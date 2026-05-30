@@ -7,6 +7,7 @@ import '../../domain/entities/recognition_result.dart';
 import '../../domain/repositories/recognition_repository.dart';
 
 class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
+  static const _xiaomiVisionModels = {'mimo-v2.5', 'mimo-v2-omni'};
   static const _defaultPrompt = '''
 你是家庭物品整理助手。请根据图片识别一个主要物品，并严格只返回 JSON，不要包含 markdown。
 
@@ -59,12 +60,20 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
     final prompt = settings.customPrompt.trim().isEmpty
         ? _defaultPrompt
         : '${settings.customPrompt.trim()}\n\n$_defaultPrompt';
+    final model = _effectiveRecognitionModel(settings);
 
     request.write(
       jsonEncode({
-        'model': settings.model,
+        'model': model,
         'temperature': 0.2,
+        'max_completion_tokens': 1024,
         'messages': [
+          if (_isXiaomiProvider(settings))
+            {
+              'role': 'system',
+              'content':
+                  '你是MiMo（中文名称也是MiMo），是小米公司研发的AI智能助手。今天的日期请以系统时间为准，你的知识截止日期是2024年12月。',
+            },
           {
             'role': 'user',
             'content': [
@@ -135,7 +144,17 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
     request.write(
       jsonEncode({
         'model': settings.model,
+        if (_isXiaomiProvider(settings))
+          'max_completion_tokens': 16
+        else
+          'max_tokens': 16,
         'messages': [
+          if (_isXiaomiProvider(settings))
+            {
+              'role': 'system',
+              'content':
+                  '你是MiMo（中文名称也是MiMo），是小米公司研发的AI智能助手。只回复 OK。',
+            },
           {
             'role': 'user',
             'content': [
@@ -143,7 +162,6 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
             ],
           },
         ],
-        'max_tokens': 16,
       }),
     );
 
@@ -220,8 +238,29 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
       'Bearer ${settings.apiKey}',
     );
 
+    if (_isXiaomiProvider(settings)) {
+      request.headers.set('api-key', settings.apiKey);
+    }
+
     if (settings.providerId == 'openrouter') {
       request.headers.set('X-Title', '物见');
     }
+  }
+
+  bool _isXiaomiProvider(AppSettings settings) {
+    return settings.providerId == 'xiaomi-payg' ||
+        settings.providerId == 'xiaomi-token-plan';
+  }
+
+  String _effectiveRecognitionModel(AppSettings settings) {
+    final model = settings.model.trim();
+    if (!_isXiaomiProvider(settings)) {
+      return model;
+    }
+    if (_xiaomiVisionModels.contains(model)) {
+      return model;
+    }
+    // Xiaomi image understanding currently requires a vision-capable model.
+    return 'mimo-v2.5';
   }
 }
