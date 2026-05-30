@@ -70,6 +70,7 @@ class AppController extends ChangeNotifier {
   bool _isProcessingQueue = false;
   String? _message;
   File? _latestImage;
+  String? _activeCaptureBox;
 
   AppSettings get settings => _settingsStore.activeProfile.settings;
   AppSettingsProfile get activeProfile => _settingsStore.activeProfile;
@@ -83,6 +84,7 @@ class AppController extends ChangeNotifier {
   bool get isProcessingQueue => _isProcessingQueue;
   String? get message => _message;
   File? get latestImage => _latestImage;
+  String? get activeCaptureBox => _activeCaptureBox;
   TokenUsageStats get activeUsageStats =>
       _usageStatsByProfileId[activeProfile.id] ?? TokenUsageStats.empty();
   TokenUsageStats get overallUsageStats {
@@ -260,9 +262,9 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<void> queueCapturedFile(File photo) async {
+  Future<void> queueCapturedFile(File photo, {String? box}) async {
     try {
-      final draft = await _createQueuedDraft(photo);
+      final draft = await _createQueuedDraft(photo, box: box);
       await enqueuePendingItem(draft);
       _message = '已加入后台识别队列';
       notifyListeners();
@@ -340,13 +342,22 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<ItemRecord> _createQueuedDraft(File photo) async {
+  void setActiveCaptureBox(String? box) {
+    final normalized = box?.trim();
+    _activeCaptureBox = normalized == null || normalized.isEmpty
+        ? null
+        : normalized;
+    notifyListeners();
+  }
+
+  Future<ItemRecord> _createQueuedDraft(File photo, {String? box}) async {
     final imageFile = await _persistImage(photo);
     _latestImage = imageFile;
     await _refreshStorageUsage();
     notifyListeners();
 
     final now = DateTime.now();
+    final resolvedBox = (box ?? _activeCaptureBox ?? '').trim();
     return ItemRecord(
       id: now.microsecondsSinceEpoch.toString(),
       name: '待识别物品',
@@ -358,7 +369,7 @@ class AppController extends ChangeNotifier {
       parameters: const {'识别状态': '排队中'},
       notes: '',
       room: '',
-      box: '',
+      box: resolvedBox,
       brand: '',
       model: '',
       color: '',
@@ -411,6 +422,7 @@ class AppController extends ChangeNotifier {
           );
           await _replacePendingItem(
             recognized.copyWith(
+              box: queued.box.trim().isEmpty ? recognized.box : queued.box,
               queueState: QueueRecognitionState.ready,
               recognitionError: '',
               updatedAt: DateTime.now(),

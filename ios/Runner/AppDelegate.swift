@@ -42,6 +42,11 @@ import UIKit
   }
 
   private func handleMethodCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "getCameraMetadata" {
+      result([])
+      return
+    }
+
     guard call.method == "saveFile" else {
       result(FlutterMethodNotImplemented)
       return

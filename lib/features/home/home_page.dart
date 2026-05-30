@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/theme/app_theme.dart';
 import '../../domain/entities/item_record.dart';
@@ -12,6 +13,10 @@ import '../shell/app_scope.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
+
+  static const MethodChannel _nativeCameraChannel = MethodChannel(
+    'com.wujian.app.icheck/file_saver',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -103,7 +108,7 @@ class HomePage extends StatelessWidget {
                                 child: OutlinedButton.icon(
                                   onPressed: controller.isBusy
                                       ? null
-                                      : () => _openCamera(context),
+                                      : () => _startContinuousCapture(context),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.white,
                                     side: BorderSide(
@@ -116,10 +121,18 @@ class HomePage extends StatelessWidget {
                                     ),
                                   ),
                                   icon: const Icon(Icons.photo_camera_back),
-                                  label: const Text('连续拍照'),
+                                  label: const Text('建箱后连拍'),
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '连续拍照会先创建一个箱子，后续这批识别结果都会自动归到这个箱子里。',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.78),
+                                ),
                           ),
                         ],
                       ),
@@ -213,10 +226,121 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  Future<void> _openCamera(BuildContext context) async {
-    await Navigator.of(
+  Future<void> _openCamera(
+    BuildContext context, {
+    String? captureBox,
+    bool singleCapture = true,
+  }) async {
+    final controller = AppScope.of(context);
+    if (Platform.isAndroid) {
+      final rawPaths =
+          await _nativeCameraChannel.invokeMethod<List<dynamic>>(
+            'openNativeCamera',
+            {
+              'captureBox': captureBox,
+              'singleCapture': singleCapture,
+            },
+          ) ??
+          const [];
+      for (final rawPath in rawPaths) {
+        final path = rawPath?.toString() ?? '';
+        if (path.trim().isEmpty) {
+          continue;
+        }
+        await controller.queueCapturedFile(File(path), box: captureBox);
+      }
+      return;
+    }
+
+    controller.setActiveCaptureBox(captureBox);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CameraCapturePage(captureBox: captureBox),
+      ),
+    );
+    controller.setActiveCaptureBox(null);
+  }
+
+  Future<void> _startContinuousCapture(BuildContext context) async {
+    final captureBox = await showDialog<String>(
+      context: context,
+      builder: (_) => const _CreateCaptureBoxDialog(),
+    );
+    if (!context.mounted || captureBox == null) {
+      return;
+    }
+    await _openCamera(
       context,
-    ).push(MaterialPageRoute(builder: (_) => const CameraCapturePage()));
+      captureBox: captureBox,
+      singleCapture: false,
+    );
+  }
+}
+
+class _CreateCaptureBoxDialog extends StatefulWidget {
+  const _CreateCaptureBoxDialog();
+
+  @override
+  State<_CreateCaptureBoxDialog> createState() =>
+      _CreateCaptureBoxDialogState();
+}
+
+class _CreateCaptureBoxDialogState extends State<_CreateCaptureBoxDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text:
+          '箱-${DateTime.now().month.toString().padLeft(2, '0')}${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().hour.toString().padLeft(2, '0')}${DateTime.now().minute.toString().padLeft(2, '0')}',
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('创建连续拍照箱子'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('开始连续拍照前，先给这一批物品起一个箱号或包裹名。'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: '箱号 / 包裹名',
+              hintText: '例如：客厅-纸箱-01',
+            ),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('开始拍照')),
+      ],
+    );
+  }
+
+  void _submit() {
+    final value = _controller.text.trim();
+    if (value.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(value);
   }
 }
 
@@ -365,6 +489,13 @@ class _PendingItemCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+                      if (item.box.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '箱子：${item.box}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -512,7 +643,11 @@ class _RecentItemCard extends StatelessWidget {
                   ),
                 ),
           title: Text(item.name),
-          subtitle: Text('${item.category} · ${item.status.label}'),
+          subtitle: Text(
+            item.box.trim().isEmpty
+                ? '${item.category} · ${item.status.label}'
+                : '${item.category} · ${item.status.label} · ${item.box}',
+          ),
           trailing: const Icon(Icons.chevron_right),
         ),
       ),
