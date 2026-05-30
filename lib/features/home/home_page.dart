@@ -460,6 +460,7 @@ class _PendingItemCard extends StatelessWidget {
     final canConfirm =
         item.queueState == QueueRecognitionState.ready ||
         item.queueState == QueueRecognitionState.failed;
+    final canRetry = item.queueState == QueueRecognitionState.failed;
 
     return Card(
       child: Padding(
@@ -504,9 +505,12 @@ class _PendingItemCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            Row(
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
               children: [
-                Expanded(
+                SizedBox(
+                  width: 120,
                   child: FilledButton(
                     onPressed: !canConfirm
                         ? null
@@ -532,17 +536,21 @@ class _PendingItemCard extends StatelessWidget {
                             }
                           },
                     style: FilledButton.styleFrom(
-                      textStyle: const TextStyle(fontSize: 13),
+                      textStyle: const TextStyle(fontSize: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 12,
+                      ),
                     ),
                     child: Text(
-                      canConfirm ? '编辑确认' : '识别中',
+                      canConfirm ? '编辑后添加' : '识别中',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
+                SizedBox(
+                  width: 104,
                   child: FilledButton.tonal(
                     onPressed: !canConfirm
                         ? null
@@ -554,18 +562,33 @@ class _PendingItemCard extends StatelessWidget {
                             ),
                           ),
                     style: FilledButton.styleFrom(
-                      textStyle: const TextStyle(fontSize: 13),
+                      textStyle: const TextStyle(fontSize: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 12,
+                      ),
                     ),
                     child: const Text(
-                      '直接确认',
+                      '直接添加',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                if (canRetry)
+                  OutlinedButton.icon(
+                    onPressed: () => controller.retryPendingRecognition(item.id),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('重新识别'),
+                    style: OutlinedButton.styleFrom(
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
                 OutlinedButton(
                   onPressed: () => controller.removePendingItem(item.id),
+                  style: OutlinedButton.styleFrom(
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
                   child: const Text('移除'),
                 ),
               ],

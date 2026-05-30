@@ -308,6 +308,36 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> retryPendingRecognition(String id) async {
+    final index = _pendingQueue.indexWhere((entry) => entry.id == id);
+    if (index < 0) {
+      return;
+    }
+    final target = _pendingQueue[index];
+    await _replacePendingItem(
+      target.copyWith(
+        queueState: QueueRecognitionState.queued,
+        name: '待识别物品',
+        category: '待分类',
+        description: '等待后台识别',
+        brand: '',
+        model: '',
+        color: '',
+        material: '',
+        notes: '',
+        recognitionError: '',
+        parameters: {
+          if (target.box.trim().isNotEmpty) '来源箱号': target.box.trim(),
+          '识别状态': '排队中',
+        },
+        updatedAt: DateTime.now(),
+      ),
+    );
+    _message = '已重新加入识别队列';
+    notifyListeners();
+    unawaited(_processPendingQueue());
+  }
+
   Future<void> saveItem(ItemRecord item) async {
     _items = [item, ..._items.where((entry) => entry.id != item.id)]
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
