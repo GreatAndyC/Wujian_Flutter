@@ -262,9 +262,15 @@ class HomePage extends StatelessWidget {
   }
 
   Future<void> _startContinuousCapture(BuildContext context) async {
+    final controller = AppScope.of(context);
+    final existingBoxes = {
+      ...controller.items.map((item) => item.box.trim()),
+      ...controller.pendingQueue.map((item) => item.box.trim()),
+    }.where((box) => box.isNotEmpty).toList()
+      ..sort();
     final captureBox = await showDialog<String>(
       context: context,
-      builder: (_) => const _CreateCaptureBoxDialog(),
+      builder: (_) => _CreateCaptureBoxDialog(existingBoxes: existingBoxes),
     );
     if (!context.mounted || captureBox == null) {
       return;
@@ -278,7 +284,9 @@ class HomePage extends StatelessWidget {
 }
 
 class _CreateCaptureBoxDialog extends StatefulWidget {
-  const _CreateCaptureBoxDialog();
+  const _CreateCaptureBoxDialog({required this.existingBoxes});
+
+  final List<String> existingBoxes;
 
   @override
   State<_CreateCaptureBoxDialog> createState() =>
@@ -287,10 +295,16 @@ class _CreateCaptureBoxDialog extends StatefulWidget {
 
 class _CreateCaptureBoxDialogState extends State<_CreateCaptureBoxDialog> {
   late final TextEditingController _controller;
+  String? _selectedExistingBox;
+  bool _useExistingBox = false;
 
   @override
   void initState() {
     super.initState();
+    _useExistingBox = widget.existingBoxes.isNotEmpty;
+    _selectedExistingBox = widget.existingBoxes.isEmpty
+        ? null
+        : widget.existingBoxes.first;
     _controller = TextEditingController(
       text:
           '箱-${DateTime.now().month.toString().padLeft(2, '0')}${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().hour.toString().padLeft(2, '0')}${DateTime.now().minute.toString().padLeft(2, '0')}',
@@ -306,23 +320,71 @@ class _CreateCaptureBoxDialogState extends State<_CreateCaptureBoxDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('创建连续拍照箱子'),
+      title: const Text('连续拍照箱子'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('开始连续拍照前，先给这一批物品起一个箱号或包裹名。'),
+          const Text('开始连续拍照前，可以新建一个箱子，或直接加入现有箱子。'),
           const SizedBox(height: 12),
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '箱号 / 包裹名',
-              hintText: '例如：客厅-纸箱-01',
-            ),
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('新建箱子'),
+                selected: !_useExistingBox,
+                onSelected: (_) => setState(() => _useExistingBox = false),
+              ),
+              ChoiceChip(
+                label: const Text('加入现有箱子'),
+                selected: _useExistingBox,
+                onSelected: widget.existingBoxes.isEmpty
+                    ? null
+                    : (_) => setState(() => _useExistingBox = true),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          if (_useExistingBox && widget.existingBoxes.isNotEmpty)
+            DropdownButtonFormField<String>(
+              initialValue: _selectedExistingBox,
+              decoration: const InputDecoration(
+                labelText: '现有箱子',
+                hintText: '选择一个已存在的箱子',
+              ),
+              items: widget.existingBoxes
+                  .map(
+                    (box) => DropdownMenuItem(
+                      value: box,
+                      child: Text(
+                        box,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() => _selectedExistingBox = value),
+            )
+          else
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '箱号 / 包裹名',
+                hintText: '例如：客厅-纸箱-01',
+              ),
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+            ),
+          if (widget.existingBoxes.isEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              '当前还没有可加入的现有箱子。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
       actions: [
@@ -336,7 +398,9 @@ class _CreateCaptureBoxDialogState extends State<_CreateCaptureBoxDialog> {
   }
 
   void _submit() {
-    final value = _controller.text.trim();
+    final value = _useExistingBox
+        ? (_selectedExistingBox ?? '').trim()
+        : _controller.text.trim();
     if (value.isEmpty) {
       return;
     }
