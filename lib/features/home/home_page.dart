@@ -563,6 +563,15 @@ class _PendingItemCard extends StatelessWidget {
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
+                      const SizedBox(height: 8),
+                      Text(
+                        '录入时间：${_formatCardTime(item.createdAt)}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      Text(
+                        '识别时间：${_recognitionTimeLabel(item)}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ],
                   ),
                 ),
@@ -664,6 +673,20 @@ class _PendingItemCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatCardTime(DateTime value) {
+  return '${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} '
+      '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}:${value.second.toString().padLeft(2, '0')}';
+}
+
+String _recognitionTimeLabel(ItemRecord item) {
+  return switch (item.queueState) {
+    QueueRecognitionState.queued => '待识别',
+    QueueRecognitionState.processing => '识别中',
+    QueueRecognitionState.ready || QueueRecognitionState.failed =>
+      _formatCardTime(item.updatedAt),
+  };
 }
 
 class _PendingThumbnail extends StatelessWidget {

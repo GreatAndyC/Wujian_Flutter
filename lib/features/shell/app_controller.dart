@@ -68,6 +68,7 @@ class AppController extends ChangeNotifier {
   bool _isReady = false;
   bool _isBusy = false;
   bool _isProcessingQueue = false;
+  Future<void> _pendingQueueMutation = Future.value();
   String? _message;
   File? _latestImage;
   String? _activeCaptureBox;
@@ -276,36 +277,42 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> enqueuePendingItem(ItemRecord item, {bool notify = true}) async {
-    _pendingQueue = [
-      item,
-      ..._pendingQueue.where((entry) => entry.id != item.id),
-    ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    await _pendingQueueRepository.savePendingItems(_pendingQueue);
-    await _refreshStorageUsage();
-    if (notify) {
-      notifyListeners();
-    }
+    await _mutatePendingQueue(() async {
+      _pendingQueue = [
+        item,
+        ..._pendingQueue.where((entry) => entry.id != item.id),
+      ]..sort(_comparePendingItems);
+      await _pendingQueueRepository.savePendingItems(_pendingQueue);
+      await _refreshStorageUsage();
+      if (notify) {
+        notifyListeners();
+      }
+    });
   }
 
   Future<void> removePendingItem(String id) async {
-    _pendingQueue = _pendingQueue.where((entry) => entry.id != id).toList();
-    await _pendingQueueRepository.savePendingItems(_pendingQueue);
-    await optimizeStorage(silent: true);
-    _message = '已移出待确认队列';
-    notifyListeners();
+    await _mutatePendingQueue(() async {
+      _pendingQueue = _pendingQueue.where((entry) => entry.id != id).toList();
+      await _pendingQueueRepository.savePendingItems(_pendingQueue);
+      await optimizeStorage(silent: true);
+      _message = '已移出待确认队列';
+      notifyListeners();
+    });
   }
 
   Future<void> confirmPendingItem(ItemRecord item) async {
-    _pendingQueue = _pendingQueue
-        .where((entry) => entry.id != item.id)
-        .toList();
-    _items = [item, ..._items.where((entry) => entry.id != item.id)]
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    await _pendingQueueRepository.savePendingItems(_pendingQueue);
-    await _itemRepository.saveItems(_items);
-    await _refreshStorageUsage();
-    _message = '物品已确认并入库';
-    notifyListeners();
+    await _mutatePendingQueue(() async {
+      _pendingQueue = _pendingQueue
+          .where((entry) => entry.id != item.id)
+          .toList();
+      _items = [item, ..._items.where((entry) => entry.id != item.id)]
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      await _pendingQueueRepository.savePendingItems(_pendingQueue);
+      await _itemRepository.saveItems(_items);
+      await _refreshStorageUsage();
+      _message = '物品已确认并入库';
+      notifyListeners();
+    });
   }
 
   Future<void> retryPendingRecognition(String id) async {
@@ -420,68 +427,71 @@ class AppController extends ChangeNotifier {
 
     try {
       while (true) {
-        final nextIndex = _pendingQueue.indexWhere(
-          (item) => item.queueState == QueueRecognitionState.queued,
-        );
-        if (nextIndex < 0) {
+        final queuedItems = _pendingQueue
+            .where((item) => item.queueState == QueueRecognitionState.queued)
+            .take(_pendingQueueConcurrencyLimit())
+            .toList();
+        if (queuedItems.isEmpty) {
           break;
         }
-
-        final queued = _pendingQueue[nextIndex];
-        await _replacePendingItem(
-          queued.copyWith(
-            queueState: QueueRecognitionState.processing,
-            description: '正在后台识别',
-            parameters: {...queued.parameters, '识别状态': '识别中'},
-            updatedAt: DateTime.now(),
-          ),
-        );
-
-        try {
-          final stopwatch = Stopwatch()..start();
-          final bytes = await File(queued.imagePath).readAsBytes();
-          final recognition = await _recognitionRepository.recognizeItem(
-            settings: settings,
-            imageBytes: bytes,
-            mimeType: _detectMimeType(queued.imagePath),
-          );
-          stopwatch.stop();
-          _applyUsage(recognition);
-          final recognized = recognition.toItem(
-            id: queued.id,
-            imagePath: queued.imagePath,
-            now: DateTime.now(),
-          );
-          await _replacePendingItem(
-            recognized.copyWith(
-              parameters: {
-                ...recognized.parameters,
-                '识别用时': _formatRecognitionDuration(stopwatch.elapsed),
-              },
-              box: queued.box.trim().isEmpty ? recognized.box : queued.box,
-              queueState: QueueRecognitionState.ready,
-              recognitionError: '',
-              updatedAt: DateTime.now(),
-            ),
-          );
-        } catch (error) {
-          await _replacePendingItem(
-            queued.copyWith(
-              queueState: QueueRecognitionState.failed,
-              description: '识别失败，请稍后重试或手动补充',
-              recognitionError: error.toString().replaceFirst(
-                'Exception: ',
-                '',
-              ),
-              parameters: {...queued.parameters, '识别状态': '识别失败'},
-              updatedAt: DateTime.now(),
-            ),
-          );
-        }
+        await Future.wait(queuedItems.map(_processQueuedItem));
       }
     } finally {
       _isProcessingQueue = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _processQueuedItem(ItemRecord queued) async {
+    await _replacePendingItem(
+      queued.copyWith(
+        queueState: QueueRecognitionState.processing,
+        description: '正在后台识别',
+        parameters: {...queued.parameters, '识别状态': '识别中'},
+        updatedAt: DateTime.now(),
+      ),
+    );
+
+    try {
+      final stopwatch = Stopwatch()..start();
+      final bytes = await File(queued.imagePath).readAsBytes();
+      final recognition = await _recognitionRepository.recognizeItem(
+        settings: settings,
+        imageBytes: bytes,
+        mimeType: _detectMimeType(queued.imagePath),
+      );
+      stopwatch.stop();
+      _applyUsage(recognition);
+      final recognized = recognition.toItem(
+        id: queued.id,
+        imagePath: queued.imagePath,
+        now: DateTime.now(),
+      );
+      await _replacePendingItem(
+        recognized.copyWith(
+          parameters: {
+            ...recognized.parameters,
+            '识别用时': _formatRecognitionDuration(stopwatch.elapsed),
+          },
+          box: queued.box.trim().isEmpty ? recognized.box : queued.box,
+          queueState: QueueRecognitionState.ready,
+          recognitionError: '',
+          updatedAt: DateTime.now(),
+        ),
+      );
+    } catch (error) {
+      await _replacePendingItem(
+        queued.copyWith(
+          queueState: QueueRecognitionState.failed,
+          description: '识别失败，请稍后重试或手动补充',
+          recognitionError: error.toString().replaceFirst(
+            'Exception: ',
+            '',
+          ),
+          parameters: {...queued.parameters, '识别状态': '识别失败'},
+          updatedAt: DateTime.now(),
+        ),
+      );
     }
   }
 
@@ -506,13 +516,54 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _replacePendingItem(ItemRecord item) async {
-    _pendingQueue =
-        _pendingQueue
-            .map((entry) => entry.id == item.id ? item : entry)
-            .toList()
-          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    await _pendingQueueRepository.savePendingItems(_pendingQueue);
-    notifyListeners();
+    await _mutatePendingQueue(() async {
+      _pendingQueue =
+          _pendingQueue
+              .map((entry) => entry.id == item.id ? item : entry)
+              .toList()
+            ..sort(_comparePendingItems);
+      await _pendingQueueRepository.savePendingItems(_pendingQueue);
+      notifyListeners();
+    });
+  }
+
+  int _comparePendingItems(ItemRecord left, ItemRecord right) {
+    final priorityDiff =
+        _pendingQueuePriority(left.queueState) - _pendingQueuePriority(right.queueState);
+    if (priorityDiff != 0) {
+      return priorityDiff;
+    }
+    return right.updatedAt.compareTo(left.updatedAt);
+  }
+
+  int _pendingQueuePriority(QueueRecognitionState state) {
+    return switch (state) {
+      QueueRecognitionState.ready => 0,
+      QueueRecognitionState.processing => 1,
+      QueueRecognitionState.queued => 2,
+      QueueRecognitionState.failed => 3,
+    };
+  }
+
+  int _pendingQueueConcurrencyLimit() {
+    return switch (settings.providerId) {
+      'volcengine' => 5,
+      'xiaomi-payg' => 1,
+      'xiaomi-token-plan' => 1,
+      _ => 2,
+    };
+  }
+
+  Future<T> _mutatePendingQueue<T>(Future<T> Function() action) async {
+    final previous = _pendingQueueMutation;
+    final gate = Completer<void>();
+    _pendingQueueMutation = gate.future;
+    await previous.catchError((_) {});
+    try {
+      return await action();
+    } finally {
+      gate.complete();
+    }
   }
 
   Future<File> _persistImage(File source) async {
