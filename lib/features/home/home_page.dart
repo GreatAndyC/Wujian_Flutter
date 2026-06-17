@@ -176,9 +176,23 @@ class HomePage extends StatelessWidget {
                     if (controller.latestImage != null)
                       _LatestImageCard(image: controller.latestImage!),
                     const SizedBox(height: 18),
-                    Text(
-                      '待确认队列',
-                      style: Theme.of(context).textTheme.titleLarge,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '待确认队列',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed:
+                              controller.isBusy || failedPendingCount == 0
+                              ? null
+                              : controller.retryAllFailedPendingItems,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('一键重新识别'),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -216,15 +230,10 @@ class HomePage extends StatelessWidget {
                           onPressed: controller.isBusy || readyPendingCount == 0
                               ? null
                               : controller.confirmAllReadyPendingItems,
-                          icon: const Icon(Icons.playlist_add_check_circle_outlined),
+                          icon: const Icon(
+                            Icons.playlist_add_check_circle_outlined,
+                          ),
                           label: const Text('全部添加'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: controller.isBusy || failedPendingCount == 0
-                              ? null
-                              : controller.retryAllFailedPendingItems,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('全部失败重新识别'),
                         ),
                       ],
                     ),
@@ -298,10 +307,7 @@ class HomePage extends StatelessWidget {
         final rawPaths =
             await _nativeCameraChannel.invokeMethod<List<dynamic>>(
               'openNativeCamera',
-              {
-                'captureBox': captureBox,
-                'singleCapture': singleCapture,
-              },
+              {'captureBox': captureBox, 'singleCapture': singleCapture},
             ) ??
             const [];
         for (final rawPath in rawPaths) {
@@ -331,8 +337,7 @@ class HomePage extends StatelessWidget {
     final existingBoxes = {
       ...controller.items.map((item) => item.box.trim()),
       ...controller.pendingQueue.map((item) => item.box.trim()),
-    }.where((box) => box.isNotEmpty).toList()
-      ..sort();
+    }.where((box) => box.isNotEmpty).toList()..sort();
     final captureBox = await showDialog<String>(
       context: context,
       builder: (_) => _CreateCaptureBoxDialog(existingBoxes: existingBoxes),
@@ -340,11 +345,7 @@ class HomePage extends StatelessWidget {
     if (!context.mounted || captureBox == null) {
       return;
     }
-    await _openCamera(
-      context,
-      captureBox: captureBox,
-      singleCapture: false,
-    );
+    await _openCamera(context, captureBox: captureBox, singleCapture: false);
   }
 }
 
@@ -430,7 +431,8 @@ class _CreateCaptureBoxDialogState extends State<_CreateCaptureBoxDialog> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) => setState(() => _selectedExistingBox = value),
+              onChanged: (value) =>
+                  setState(() => _selectedExistingBox = value),
             )
           else
             TextField(
@@ -744,7 +746,8 @@ class _PendingItemCard extends StatelessWidget {
                 ),
                 if (canRetry)
                   OutlinedButton.icon(
-                    onPressed: () => controller.retryPendingRecognition(item.id),
+                    onPressed: () =>
+                        controller.retryPendingRecognition(item.id),
                     icon: const Icon(Icons.refresh, size: 16),
                     label: const Text('重新识别'),
                     style: OutlinedButton.styleFrom(
@@ -776,8 +779,8 @@ String _recognitionTimeLabel(ItemRecord item) {
   return switch (item.queueState) {
     QueueRecognitionState.queued => '待识别',
     QueueRecognitionState.processing => '识别中',
-    QueueRecognitionState.ready || QueueRecognitionState.failed =>
-      _formatCardTime(item.updatedAt),
+    QueueRecognitionState.ready ||
+    QueueRecognitionState.failed => _formatCardTime(item.updatedAt),
   };
 }
 

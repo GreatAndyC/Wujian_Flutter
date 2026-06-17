@@ -35,6 +35,7 @@ class _CameraCapturePageState extends State<CameraCapturePage>
   int? _teleBackCameraIndex;
   bool _isInitializing = true;
   bool _isCapturing = false;
+  bool _isTorchEnabled = false;
   String? _error;
   int _capturedCount = 0;
   Offset? _focusIndicatorPosition;
@@ -116,12 +117,30 @@ class _CameraCapturePageState extends State<CameraCapturePage>
             Positioned(
               right: 12,
               top: 12,
-              child: IconButton.filledTonal(
-                onPressed: !canSwitchDirection || _isCapturing
-                    ? null
-                    : _switchDirection,
-                icon: const Icon(Icons.cameraswitch_outlined),
-                tooltip: '切换前后摄像头',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton.filledTonal(
+                    onPressed:
+                        controller == null ||
+                            !controller.value.isInitialized ||
+                            _isCapturing
+                        ? null
+                        : _toggleTorch,
+                    icon: Icon(
+                      _isTorchEnabled ? Icons.flash_on : Icons.flash_off,
+                    ),
+                    tooltip: _isTorchEnabled ? '关闭常亮闪光灯' : '打开常亮闪光灯',
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    onPressed: !canSwitchDirection || _isCapturing
+                        ? null
+                        : _switchDirection,
+                    icon: const Icon(Icons.cameraswitch_outlined),
+                    tooltip: '切换前后摄像头',
+                  ),
+                ],
               ),
             ),
             if (captureBox.isNotEmpty)
@@ -305,6 +324,10 @@ class _CameraCapturePageState extends State<CameraCapturePage>
       _minZoomLevel = await controller.getMinZoomLevel();
       _maxZoomLevel = await controller.getMaxZoomLevel();
       final defaultZoom = _defaultZoomLevelFor(camera);
+    final enableTorch = _isTorchEnabled && _isBackCamera(camera);
+    await controller.setFlashMode(
+      enableTorch ? FlashMode.torch : FlashMode.off,
+    );
       await controller.setZoomLevel(defaultZoom);
       if (!mounted) {
         await controller.dispose();
@@ -314,6 +337,7 @@ class _CameraCapturePageState extends State<CameraCapturePage>
         _cameraController = controller;
         _cameraIndex = index;
         _selectedZoomLevel = defaultZoom;
+        _isTorchEnabled = enableTorch;
         _isInitializing = false;
         _error = null;
       });
@@ -407,6 +431,30 @@ class _CameraCapturePageState extends State<CameraCapturePage>
       if (mounted) {
         setState(() => _isCapturing = false);
       }
+    }
+  }
+
+  Future<void> _toggleTorch() async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    final nextValue = !_isTorchEnabled;
+    try {
+      await controller.setFlashMode(
+        nextValue ? FlashMode.torch : FlashMode.off,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isTorchEnabled = nextValue);
+    } on CameraException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.description ?? error.code)));
     }
   }
 
@@ -731,6 +779,7 @@ class _CameraCapturePageState extends State<CameraCapturePage>
     }
     return 'back';
   }
+
 }
 
 class _NativeCameraMetadata {
