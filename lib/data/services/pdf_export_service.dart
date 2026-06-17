@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -13,6 +14,8 @@ class PdfExportService {
   PdfExportService(this._mediaStorageService);
 
   static const _fontAssetPath = 'assets/fonts/simhei.ttf';
+  static const _previewImageMaxDimension = 320;
+  static const _previewJpegQuality = 68;
   final MediaStorageService _mediaStorageService;
 
   Future<File> exportItems({
@@ -268,12 +271,62 @@ class PdfExportService {
         return null;
       }
       final bytes = await file.readAsBytes();
-      return bytes.isEmpty ? null : bytes;
+      if (bytes.isEmpty) {
+        return null;
+      }
+      return _buildPdfPreviewBytes(bytes);
     } on FileSystemException {
       return null;
     } on ArgumentError {
       return null;
     }
+  }
+
+  Uint8List _buildPdfPreviewBytes(Uint8List sourceBytes) {
+    try {
+      final decoded = img.decodeImage(sourceBytes);
+      if (decoded == null) {
+        return sourceBytes;
+      }
+      final resized = _resizePreviewIfNeeded(decoded);
+      if (identical(resized, decoded)) {
+        return sourceBytes;
+      }
+      return Uint8List.fromList(
+        img.encodeJpg(resized, quality: _previewJpegQuality),
+      );
+    } catch (_) {
+      return sourceBytes;
+    }
+  }
+
+  img.Image _resizePreviewIfNeeded(img.Image image) {
+    final width = image.width;
+    final height = image.height;
+    if (width <= 0 || height <= 0) {
+      return image;
+    }
+    final maxDimension = width > height ? width : height;
+    if (maxDimension <= _previewImageMaxDimension) {
+      return image;
+    }
+    if (width >= height) {
+      final targetHeight = (height * _previewImageMaxDimension / width).round();
+      return img.copyResize(
+        image,
+        width: _previewImageMaxDimension,
+        height: targetHeight,
+        interpolation: img.Interpolation.average,
+      );
+    }
+
+    final targetWidth = (width * _previewImageMaxDimension / height).round();
+    return img.copyResize(
+      image,
+      width: targetWidth,
+      height: _previewImageMaxDimension,
+      interpolation: img.Interpolation.average,
+    );
   }
 
   String _imageKey(ItemRecord item) => item.imagePath.trim();
