@@ -54,6 +54,7 @@ class NativeCameraActivity : Activity() {
     private lateinit var statusView: TextView
     private lateinit var boxView: TextView
     private lateinit var lensButtonBar: LinearLayout
+    private lateinit var flashButton: TextView
     private lateinit var switchButton: ImageButton
 
     private val capturedPaths = arrayListOf<String>()
@@ -77,6 +78,9 @@ class NativeCameraActivity : Activity() {
     private var currentActiveArraySize: Rect? = null
     private var currentMaxDigitalZoom: Float = 1f
     private var pendingLensDiagnostics = true
+    private var torchEnabled = false
+    private var torchSupportedLensId: String? = null
+    private var torchSupported: Boolean? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -162,9 +166,32 @@ class NativeCameraActivity : Activity() {
             setColorFilter(Color.WHITE)
             setOnClickListener { toggleFrontBack() }
         }
-        root.addView(
+
+        val topActionBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        flashButton =
+            TextView(this).apply {
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                setOnClickListener { toggleTorch() }
+            }
+        topActionBar.addView(flashButton)
+        topActionBar.addView(
             switchButton,
-            FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.END).apply {
+            LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                leftMargin = dp(8)
+            },
+        )
+        root.addView(
+            topActionBar,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.END,
+            ).apply {
                 topMargin = dp(12)
                 rightMargin = dp(12)
             },
@@ -331,6 +358,19 @@ class NativeCameraActivity : Activity() {
 
         switchButton.visibility = if (frontLens != null) View.VISIBLE else View.GONE
         val isBackLens = lens?.facing == CameraCharacteristics.LENS_FACING_BACK
+        if (!isBackLens) {
+            torchEnabled = false
+        }
+        val canUseTorch = isBackLens && currentLensSupportsTorch()
+        flashButton.visibility = if (canUseTorch) View.VISIBLE else View.GONE
+        flashButton.text = if (torchEnabled) "闪光灯开" else "闪光灯关"
+        flashButton.setTextColor(if (torchEnabled) Color.BLACK else Color.WHITE)
+        flashButton.background =
+            if (torchEnabled) {
+                pillBackground(Color.WHITE, cornerRadiusDp = 18)
+            } else {
+                pillBackground(0x66000000, cornerRadiusDp = 18)
+            }
         lensButtonBar.visibility =
             if (isBackLens && backLenses.size > 1) View.VISIBLE else View.GONE
         lensButtonBar.removeAllViews()
@@ -449,6 +489,7 @@ class NativeCameraActivity : Activity() {
             device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                 addTarget(previewSurface)
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                applyTorchState(this)
                 applyLensFraming(this, currentLens)
             }
 
@@ -512,7 +553,7 @@ class NativeCameraActivity : Activity() {
                 buffer.get(bytes)
                 image.close()
 
-                val file = File(cacheDir, "capture-${System.currentTimeMillis()}.jpg")
+                val file = File(cacheDir, "capture-${System.nanoTime()}.jpg")
                 FileOutputStream(file).use { it.write(bytes) }
                 capturedPaths += file.absolutePath
                 MainActivity.emitNativeCameraCapture(file.absolutePath)
@@ -540,6 +581,7 @@ class NativeCameraActivity : Activity() {
                 addTarget(readerSurface)
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation())
+                applyTorchState(this)
                 applyLensFraming(this, currentLens)
             }
         session.capture(
@@ -612,6 +654,47 @@ class NativeCameraActivity : Activity() {
             background = pillBackground(0x66000000, cornerRadiusDp = 18)
             setPadding(dp(14), dp(9), dp(14), dp(9))
         }
+    }
+
+    private fun toggleTorch() {
+        if (!currentLensSupportsTorch() || isCapturing.get()) {
+            return
+        }
+        torchEnabled = !torchEnabled
+        updateUiForLens()
+        applyTorchToPreview()
+    }
+
+    private fun applyTorchToPreview() {
+        val session = captureSession ?: return
+        val builder = previewRequestBuilder ?: return
+        applyTorchState(builder)
+        runCatching {
+            session.setRepeatingRequest(builder.build(), previewCaptureCallback, backgroundHandler)
+        }
+    }
+
+    private fun applyTorchState(builder: CaptureRequest.Builder) {
+        if (torchEnabled && currentLensSupportsTorch()) {
+            builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+            builder.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
+        } else {
+            builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+            builder.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_OFF)
+        }
+    }
+
+    private fun currentLensSupportsTorch(): Boolean {
+        val lens = currentLens ?: return false
+        if (torchSupportedLensId == lens.cameraId) {
+            return torchSupported ?: false
+        }
+        torchSupportedLensId = lens.cameraId
+        torchSupported = runCatching {
+            val characteristics = cameraManager.getCameraCharacteristics(lens.cameraId)
+            characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        }.getOrDefault(false)
+        return torchSupported ?: false
     }
 
     private fun selectTargetLenses(
