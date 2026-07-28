@@ -14,6 +14,7 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.TotalCaptureResult
@@ -39,6 +40,7 @@ import androidx.core.content.ContextCompat
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class NativeCameraActivity : Activity() {
     companion object {
@@ -47,6 +49,9 @@ class NativeCameraActivity : Activity() {
         const val EXTRA_CAPTURED_PATHS = "captured_paths"
         private const val permissionRequestCode = 2001
         private const val tag = "NativeCameraActivity"
+        private const val maxCaptureDimension = 2560
+        private const val maxPreviewDimension = 1920
+        private const val captureTimeoutMillis = 8_000L
     }
 
     private lateinit var textureView: TextureView
@@ -59,6 +64,8 @@ class NativeCameraActivity : Activity() {
 
     private val capturedPaths = arrayListOf<String>()
     private val isCapturing = AtomicBoolean(false)
+    private val isOpeningCamera = AtomicBoolean(false)
+    private val cameraGeneration = AtomicLong(0)
 
     private lateinit var cameraManager: CameraManager
     private var cameraDevice: CameraDevice? = null
@@ -67,6 +74,7 @@ class NativeCameraActivity : Activity() {
     private var imageReader: ImageReader? = null
     private var backgroundThread: HandlerThread? = null
     private var backgroundHandler: Handler? = null
+    @Volatile private var captureTimeout: Runnable? = null
 
     private var backLenses: List<NativeLensOption> = emptyList()
     private var frontLens: NativeLensOption? = null
@@ -81,6 +89,7 @@ class NativeCameraActivity : Activity() {
     private var torchEnabled = false
     private var torchSupportedLensId: String? = null
     private var torchSupported: Boolean? = null
+    @Volatile private var isActivityResumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,6 +102,7 @@ class NativeCameraActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        isActivityResumed = true
         startBackgroundThread()
         if (!hasCameraPermission()) {
             ActivityCompat.requestPermissions(
@@ -110,6 +120,7 @@ class NativeCameraActivity : Activity() {
     }
 
     override fun onPause() {
+        isActivityResumed = false
         closeCamera()
         stopBackgroundThread()
         super.onPause()
@@ -437,51 +448,103 @@ class NativeCameraActivity : Activity() {
 
     private fun openCurrentCamera() {
         val lens = currentLens ?: return
-        if (!hasCameraPermission() || !textureView.isAvailable) {
+        if (
+            !hasCameraPermission() ||
+                !textureView.isAvailable ||
+                !isActivityResumed ||
+                cameraDevice != null ||
+                !isOpeningCamera.compareAndSet(false, true)
+        ) {
             return
         }
-        val characteristics = cameraManager.getCameraCharacteristics(lens.cameraId)
-        val configMap =
-            characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                ?: return
-        currentSensorOrientation =
-            characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
-        currentActiveArraySize =
-            characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
-        currentMaxDigitalZoom =
-            characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1f
-        val previewSize = choosePreviewSize(configMap)
-        currentPreviewSize = previewSize
-        setupImageReader(configMap)
+        val generation = cameraGeneration.incrementAndGet()
+        try {
+            val characteristics = cameraManager.getCameraCharacteristics(lens.cameraId)
+            val configMap =
+                characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                    ?: run {
+                        isOpeningCamera.set(false)
+                        return
+                    }
+            currentSensorOrientation =
+                characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+            currentActiveArraySize =
+                characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            currentMaxDigitalZoom =
+                characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1f
+            val previewSize = choosePreviewSize(configMap)
+            currentPreviewSize = previewSize
+            setupImageReader(configMap, generation)
 
-        val texture = textureView.surfaceTexture ?: return
-        texture.setDefaultBufferSize(previewSize.width, previewSize.height)
-        applyPreviewTransform(previewSize)
+            val texture =
+                textureView.surfaceTexture
+                    ?: run {
+                        isOpeningCamera.set(false)
+                        return
+                    }
+            texture.setDefaultBufferSize(previewSize.width, previewSize.height)
+            applyPreviewTransform(previewSize)
 
-        @Suppress("MissingPermission")
-        cameraManager.openCamera(
-            lens.cameraId,
-            object : CameraDevice.StateCallback() {
-                override fun onOpened(device: CameraDevice) {
-                    cameraDevice = device
-                    createPreviewSession(texture)
-                }
+            @Suppress("MissingPermission")
+            cameraManager.openCamera(
+                lens.cameraId,
+                object : CameraDevice.StateCallback() {
+                    override fun onOpened(device: CameraDevice) {
+                        if (
+                            generation != cameraGeneration.get() ||
+                                !isActivityResumed
+                        ) {
+                            device.close()
+                            return
+                        }
+                        isOpeningCamera.set(false)
+                        cameraDevice = device
+                        try {
+                            createPreviewSession(texture, generation)
+                        } catch (error: Exception) {
+                            Log.e(tag, "Failed to create preview session", error)
+                            device.close()
+                            if (generation == cameraGeneration.get()) {
+                                cameraDevice = null
+                                showCaptureError("相机预览启动失败，请退出后重试")
+                            }
+                        }
+                    }
 
-                override fun onDisconnected(device: CameraDevice) {
-                    device.close()
-                    cameraDevice = null
-                }
+                    override fun onDisconnected(device: CameraDevice) {
+                        device.close()
+                        if (generation == cameraGeneration.get()) {
+                            isOpeningCamera.set(false)
+                            if (cameraDevice === device) {
+                                cameraDevice = null
+                            }
+                        }
+                    }
 
-                override fun onError(device: CameraDevice, error: Int) {
-                    device.close()
-                    cameraDevice = null
-                }
-            },
-            backgroundHandler,
-        )
+                    override fun onError(device: CameraDevice, error: Int) {
+                        device.close()
+                        if (generation == cameraGeneration.get()) {
+                            isOpeningCamera.set(false)
+                            if (cameraDevice === device) {
+                                cameraDevice = null
+                            }
+                            showCaptureError("相机打开失败，请退出后重试")
+                        }
+                    }
+                },
+                backgroundHandler,
+            )
+        } catch (error: Exception) {
+            isOpeningCamera.set(false)
+            Log.e(tag, "Failed to open camera", error)
+            showCaptureError("相机打开失败，请退出后重试")
+        }
     }
 
-    private fun createPreviewSession(texture: SurfaceTexture) {
+    private fun createPreviewSession(
+        texture: SurfaceTexture,
+        generation: Long,
+    ) {
         val device = cameraDevice ?: return
         val previewSurface = Surface(texture)
         val readerSurface = imageReader?.surface ?: return
@@ -496,16 +559,33 @@ class NativeCameraActivity : Activity() {
         val callback =
             object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
+                    if (
+                        generation != cameraGeneration.get() ||
+                            cameraDevice !== device ||
+                            !isActivityResumed
+                    ) {
+                        session.close()
+                        return
+                    }
                     captureSession = session
-                    session.setRepeatingRequest(
-                        previewRequestBuilder!!.build(),
-                        previewCaptureCallback,
-                        backgroundHandler,
-                    )
+                    runCatching {
+                        session.setRepeatingRequest(
+                            previewRequestBuilder!!.build(),
+                            previewCaptureCallback,
+                            backgroundHandler,
+                        )
+                    }.onFailure { error ->
+                        Log.e(tag, "Failed to start camera preview", error)
+                        showCaptureError("相机预览启动失败，请退出后重试")
+                    }
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
-                    captureSession = null
+                    session.close()
+                    if (generation == cameraGeneration.get()) {
+                        captureSession = null
+                        showCaptureError("相机预览配置失败，请退出后重试")
+                    }
                 }
             }
 
@@ -535,11 +615,12 @@ class NativeCameraActivity : Activity() {
         }
     }
 
-    private fun setupImageReader(configMap: StreamConfigurationMap) {
+    private fun setupImageReader(
+        configMap: StreamConfigurationMap,
+        generation: Long,
+    ) {
         imageReader?.close()
-        val outputSize = configMap.getOutputSizes(android.graphics.ImageFormat.JPEG)
-            ?.maxByOrNull { it.width * it.height }
-            ?: Size(1920, 1080)
+        val outputSize = chooseCaptureSize(configMap)
         imageReader = ImageReader.newInstance(
             outputSize.width,
             outputSize.height,
@@ -547,24 +628,53 @@ class NativeCameraActivity : Activity() {
             2,
         ).apply {
             setOnImageAvailableListener({ reader ->
-                val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-                val buffer = image.planes[0].buffer
-                val bytes = ByteArray(buffer.remaining())
-                buffer.get(bytes)
-                image.close()
-
-                val file = File(cacheDir, "capture-${System.nanoTime()}.jpg")
-                FileOutputStream(file).use { it.write(bytes) }
-                capturedPaths += file.absolutePath
-                MainActivity.emitNativeCameraCapture(file.absolutePath)
-                runOnUiThread {
-                    statusView.visibility = View.VISIBLE
-                    statusView.text = "已加入 ${capturedPaths.size} 张，后台识别中"
-                    if (singleCapture) {
-                        finishWithResult()
+                var image: android.media.Image? = null
+                var file: File? = null
+                try {
+                    image = reader.acquireLatestImage()
+                    if (image == null) {
+                        throw IllegalStateException("Camera returned no image")
+                    }
+                    if (generation != cameraGeneration.get()) {
+                        return@setOnImageAvailableListener
+                    }
+                    val buffer = image.planes[0].buffer
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+                    file = File(cacheDir, "capture-${System.nanoTime()}.jpg")
+                    FileOutputStream(file).use { output ->
+                        output.write(bytes)
+                        output.fd.sync()
+                    }
+                    if (generation != cameraGeneration.get()) {
+                        file.delete()
+                        return@setOnImageAvailableListener
+                    }
+                    val capturedCount =
+                        synchronized(capturedPaths) {
+                            capturedPaths += file.absolutePath
+                            capturedPaths.size
+                        }
+                    MainActivity.emitNativeCameraCapture(file.absolutePath)
+                    runOnUiThread {
+                        statusView.visibility = View.VISIBLE
+                        statusView.text = "已加入 $capturedCount 张，后台识别中"
+                        if (singleCapture) {
+                            finishWithResult()
+                        }
+                    }
+                } catch (error: Exception) {
+                    file?.delete()
+                    Log.e(tag, "Failed to persist captured image", error)
+                    if (generation == cameraGeneration.get()) {
+                        showCaptureError("照片保存失败，请检查存储空间后重试")
+                    }
+                } finally {
+                    image?.close()
+                    if (generation == cameraGeneration.get()) {
+                        releaseCaptureLock()
                     }
                 }
-                isCapturing.set(false)
             }, backgroundHandler)
         }
     }
@@ -576,39 +686,87 @@ class NativeCameraActivity : Activity() {
         if (!isCapturing.compareAndSet(false, true)) {
             return
         }
-        val request =
-            device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                addTarget(readerSurface)
-                set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-                set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation())
-                applyTorchState(this)
-                applyLensFraming(this, currentLens)
-            }
-        session.capture(
-            request.build(),
-            object : CameraCaptureSession.CaptureCallback() {
-                override fun onCaptureCompleted(
-                    session: CameraCaptureSession,
-                    request: CaptureRequest,
-                    result: TotalCaptureResult,
-                ) {
-                    logCaptureResult("still", result)
-                    previewRequestBuilder?.build()?.let {
-                        session.setRepeatingRequest(it, previewCaptureCallback, backgroundHandler)
-                    }
+        try {
+            armCaptureTimeout()
+            val request =
+                device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                    addTarget(readerSurface)
+                    set(
+                        CaptureRequest.CONTROL_AF_MODE,
+                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE,
+                    )
+                    set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation())
+                    applyTorchState(this)
+                    applyLensFraming(this, currentLens)
                 }
-            },
-            backgroundHandler,
-        )
+            session.capture(
+                request.build(),
+                object : CameraCaptureSession.CaptureCallback() {
+                    override fun onCaptureCompleted(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        result: TotalCaptureResult,
+                    ) {
+                        logCaptureResult("still", result)
+                        previewRequestBuilder?.build()?.let {
+                            session.setRepeatingRequest(it, previewCaptureCallback, backgroundHandler)
+                        }
+                    }
+
+                    override fun onCaptureFailed(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        failure: CaptureFailure,
+                    ) {
+                        releaseCaptureLock()
+                        showCaptureError("拍摄失败，请重试")
+                    }
+
+                    override fun onCaptureSequenceAborted(
+                        session: CameraCaptureSession,
+                        sequenceId: Int,
+                    ) {
+                        releaseCaptureLock()
+                        showCaptureError("拍摄已中断，请重试")
+                    }
+                },
+                backgroundHandler,
+            )
+        } catch (error: Exception) {
+            releaseCaptureLock()
+            Log.e(tag, "Failed to submit capture request", error)
+            showCaptureError("无法拍摄，请重新打开相机后重试")
+        }
+    }
+
+    private fun chooseCaptureSize(configMap: StreamConfigurationMap): Size {
+        val sizes =
+            configMap.getOutputSizes(android.graphics.ImageFormat.JPEG)?.toList().orEmpty()
+        return sizes
+            .filter { maxOf(it.width, it.height) <= maxCaptureDimension }
+            .maxByOrNull { it.width.toLong() * it.height.toLong() }
+            ?: sizes.minByOrNull { it.width.toLong() * it.height.toLong() }
+            ?: Size(1920, 1080)
+    }
+
+    private fun showCaptureError(message: String) {
+        runOnUiThread {
+            statusView.visibility = View.VISIBLE
+            statusView.text = message
+        }
     }
 
     private fun finishWithResult() {
-        val intent = Intent().putStringArrayListExtra(EXTRA_CAPTURED_PATHS, capturedPaths)
+        val resultPaths = synchronized(capturedPaths) { ArrayList(capturedPaths) }
+        val intent = Intent().putStringArrayListExtra(EXTRA_CAPTURED_PATHS, resultPaths)
         setResult(RESULT_OK, intent)
         finish()
     }
 
     private fun closeCamera() {
+        cameraGeneration.incrementAndGet()
+        isOpeningCamera.set(false)
+        releaseCaptureLock()
         captureSession?.close()
         captureSession = null
         cameraDevice?.close()
@@ -617,6 +775,35 @@ class NativeCameraActivity : Activity() {
         imageReader = null
         currentActiveArraySize = null
         currentMaxDigitalZoom = 1f
+    }
+
+    private fun armCaptureTimeout() {
+        val handler = backgroundHandler ?: return
+        captureTimeout?.let(handler::removeCallbacks)
+        val timeout =
+            Runnable {
+                captureTimeout = null
+                if (isCapturing.compareAndSet(true, false)) {
+                    runOnUiThread {
+                        statusView.visibility = View.VISIBLE
+                        statusView.text = "拍摄响应超时，正在重置相机"
+                        if (isActivityResumed) {
+                            reopenCamera()
+                        }
+                    }
+                }
+            }
+        captureTimeout = timeout
+        handler.postDelayed(timeout, captureTimeoutMillis)
+    }
+
+    private fun releaseCaptureLock() {
+        val timeout = captureTimeout
+        captureTimeout = null
+        if (timeout != null) {
+            backgroundHandler?.removeCallbacks(timeout)
+        }
+        isCapturing.set(false)
     }
 
     private fun startBackgroundThread() {
@@ -638,12 +825,18 @@ class NativeCameraActivity : Activity() {
 
     private fun choosePreviewSize(configMap: StreamConfigurationMap): Size {
         val targetRatio = 4.0 / 3.0
-        return configMap.getOutputSizes(SurfaceTexture::class.java)
-            ?.sortedByDescending { it.width * it.height }
-            ?.minByOrNull { size ->
-                val ratio = size.width.toDouble() / size.height.toDouble()
-                kotlin.math.abs(ratio - targetRatio)
-            }
+        val sizes = configMap.getOutputSizes(SurfaceTexture::class.java)?.toList().orEmpty()
+        val boundedSizes =
+            sizes
+                .filter { maxOf(it.width, it.height) <= maxPreviewDimension }
+                .ifEmpty { sizes }
+        return boundedSizes
+            .minWithOrNull(
+                compareBy<Size> { size ->
+                    val ratio = size.width.toDouble() / size.height.toDouble()
+                    kotlin.math.abs(ratio - targetRatio)
+                }.thenByDescending { it.width.toLong() * it.height.toLong() },
+            )
             ?: Size(1440, 1080)
     }
 

@@ -80,7 +80,7 @@
 
 ## 截止目前的产品状态
 
-- 版本：`1.0.3+4`
+- 版本：`1.0.4+5`
 - Android 包名：`com.wujian.app.icheck`
 - 默认预设：`火山方舟`
 - 默认模型：`doubao-seed-2-0-mini-260428`
@@ -111,12 +111,16 @@ adb install -r build/app/outputs/flutter-apk/app-release.apk
 
 ```bash
 flutter pub get
-flutter build apk --release
+flutter build apk --debug
 ```
 
-如果你要生成 GitHub Release 对应的分架构 APK：
+release 构建不会再回退使用 debug 证书。先通过以下环境变量提供固定 keystore，再生成 GitHub Release 对应的分架构 APK：
 
 ```bash
+WUJIAN_RELEASE_STORE_FILE=/absolute/path/release.jks \
+WUJIAN_RELEASE_STORE_PASSWORD='your-store-password' \
+WUJIAN_RELEASE_KEY_ALIAS='your-key-alias' \
+WUJIAN_RELEASE_KEY_PASSWORD='your-key-password' \
 flutter build apk --release --split-per-abi
 ```
 
@@ -223,6 +227,8 @@ flutter build ipa --release
 - API Key 使用 `flutter_secure_storage` 存储
 - 普通配置、物品记录、导出文件保存在本地
 - 图片会保存在本地，并参与导出
+- 图片会压缩并按内容去重；旧版原图会在启动后分批迁移
+- 相机临时图会计入 App 内存储统计，并按保留策略自动清理
 - 配置字段、物品数据和本地图片不会因为正常重新打开 App 而丢失
 - 具体图片是否上传到第三方模型服务，取决于你当前选用的模型服务商
 
@@ -272,9 +278,9 @@ lib/
 ```bash
 flutter pub get
 dart format lib
-dart analyze lib
+flutter analyze
 flutter test
-flutter build apk --release --split-per-abi
+flutter build apk --debug
 ```
 
 ## 常见问题
@@ -300,14 +306,9 @@ flutter build apk --release --split-per-abi
 
 ### 3. 安装 Android APK 提示签名不一致
 
-说明手机里已经装过不同签名的旧版本，可以先卸载再安装：
+说明手机里的旧版本与新 APK 签名不一致。不要直接卸载：卸载会删除本地目录和图片。正式发布从 v1.0.4 起必须始终使用同一个 release keystore，正常升级应直接覆盖安装。
 
-```bash
-adb uninstall com.wujian.app.icheck
-adb install build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-```
-
-注意：卸载会删除本地数据。
+如果旧测试包确实使用了不同签名，应先保全设备数据，再处理卸载；无法确认数据已备份时应停止操作。
 
 ## 发布
 
@@ -317,11 +318,20 @@ adb install build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 推送 `v*` tag 后可自动构建 Android release 产物。
 
+发布工作流需要配置以下 GitHub Actions Secrets：
+
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+CI 会拒绝缺少固定签名的 release 构建，也会校验 tag 版本与 `pubspec.yaml` 一致，避免再次生成无法覆盖升级的随机 debug 签名包。
+
 示例：
 
 ```bash
-git tag v1.0.2
-git push origin v1.0.2
+git tag v1.0.4
+git push origin v1.0.4
 ```
 
 如果手动发 Release，建议至少附带：

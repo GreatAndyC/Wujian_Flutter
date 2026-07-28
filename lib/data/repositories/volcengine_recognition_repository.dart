@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/item_record.dart';
@@ -8,6 +10,18 @@ import '../../domain/repositories/recognition_repository.dart';
 
 class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
   static const _xiaomiVisionModels = {'mimo-v2.5', 'mimo-v2-omni'};
+  static const _defaultConnectionTimeout = Duration(seconds: 12);
+  static const _defaultResponseTimeout = Duration(seconds: 60);
+  static const _maxResponseBytes = 2 * 1024 * 1024;
+
+  OpenAiCompatibleRecognitionRepository({
+    Duration connectionTimeout = _defaultConnectionTimeout,
+    Duration responseTimeout = _defaultResponseTimeout,
+  }) : _connectionTimeout = connectionTimeout,
+       _responseTimeout = responseTimeout;
+
+  final Duration _connectionTimeout;
+  final Duration _responseTimeout;
   static const _defaultPrompt = '''
 你是家庭物品整理助手。请根据图片识别一个主要物品，并严格只返回 JSON，不要包含 markdown。
 
@@ -69,21 +83,18 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
       return _mockResult();
     }
 
-    final client = HttpClient();
     final endpoint = Uri.parse(
       '${settings.normalizedBaseUrl}/chat/completions',
     );
-    final request = await client.postUrl(endpoint);
-    request.headers.contentType = ContentType.json;
-    _applyHeaders(request, settings);
-
     final prompt = settings.customPrompt.trim().isEmpty
         ? _defaultPrompt
         : '${settings.customPrompt.trim()}\n\n$_defaultPrompt';
     final model = _effectiveRecognitionModel(settings);
 
-    request.write(
-      jsonEncode({
+    final result = await _postJson(
+      endpoint: endpoint,
+      settings: settings,
+      payload: {
         'model': model,
         'temperature': 0.2,
         'max_completion_tokens': 1024,
@@ -108,15 +119,12 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
             ],
           },
         ],
-      }),
+      },
     );
+    final responseBody = result.body;
 
-    final response = await request.close();
-    final responseBody = await response.transform(utf8.decoder).join();
-    client.close();
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('识别请求失败: ${response.statusCode} $responseBody');
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw HttpException('识别请求失败: ${result.statusCode} $responseBody');
     }
 
     final decoded = jsonDecode(responseBody) as Map<String, dynamic>;
@@ -149,15 +157,13 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
       throw const FormatException('请先填写 Base URL、API Key 和模型 ID');
     }
 
-    final client = HttpClient();
     final endpoint = Uri.parse(
       '${settings.normalizedBaseUrl}/chat/completions',
     );
-    final request = await client.postUrl(endpoint);
-    request.headers.contentType = ContentType.json;
-    _applyHeaders(request, settings);
-    request.write(
-      jsonEncode({
+    final result = await _postJson(
+      endpoint: endpoint,
+      settings: settings,
+      payload: {
         'model': settings.model,
         if (_isXiaomiProvider(settings))
           'max_completion_tokens': 16
@@ -167,8 +173,7 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
           if (_isXiaomiProvider(settings))
             {
               'role': 'system',
-              'content':
-                  '你是MiMo（中文名称也是MiMo），是小米公司研发的AI智能助手。只回复 OK。',
+              'content': '你是MiMo（中文名称也是MiMo），是小米公司研发的AI智能助手。只回复 OK。',
             },
           {
             'role': 'user',
@@ -177,16 +182,55 @@ class OpenAiCompatibleRecognitionRepository implements RecognitionRepository {
             ],
           },
         ],
-      }),
+      },
     );
 
-    final response = await request.close();
-    final responseBody = await response.transform(utf8.decoder).join();
-    client.close();
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('连接失败: ${response.statusCode} $responseBody');
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw HttpException('连接失败: ${result.statusCode} ${result.body}');
     }
+  }
+
+  Future<({int statusCode, String body})> _postJson({
+    required Uri endpoint,
+    required AppSettings settings,
+    required Map<String, dynamic> payload,
+  }) async {
+    if (endpoint.scheme != 'https' && !_isLoopbackEndpoint(endpoint)) {
+      throw const FormatException('为保护 API Key 和照片，远程服务地址必须使用 HTTPS');
+    }
+
+    final client = HttpClient()..connectionTimeout = _connectionTimeout;
+    try {
+      final request = await client
+          .postUrl(endpoint)
+          .timeout(_connectionTimeout);
+      request.headers.contentType = ContentType.json;
+      _applyHeaders(request, settings);
+      request.write(jsonEncode(payload));
+      final response = await request.close().timeout(_responseTimeout);
+      final body = await _readResponseBody(response).timeout(_responseTimeout);
+      return (statusCode: response.statusCode, body: body);
+    } on TimeoutException {
+      throw TimeoutException('识别服务响应超时，请检查网络后重试');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<String> _readResponseBody(HttpClientResponse response) async {
+    final bytes = BytesBuilder(copy: false);
+    await for (final chunk in response) {
+      bytes.add(chunk);
+      if (bytes.length > _maxResponseBytes) {
+        throw const FormatException('识别服务响应过大');
+      }
+    }
+    return utf8.decode(bytes.takeBytes());
+  }
+
+  bool _isLoopbackEndpoint(Uri endpoint) {
+    final host = endpoint.host.toLowerCase();
+    return host == 'localhost' || host == '127.0.0.1' || host == '::1';
   }
 
   RecognitionResult _parseResult(String rawText, Map<String, dynamic> usage) {

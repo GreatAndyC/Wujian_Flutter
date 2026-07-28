@@ -16,13 +16,19 @@ class LocalTokenUsageRepository implements TokenUsageRepository {
       return {};
     }
 
-    final decoded = jsonDecode(raw) as Map<String, dynamic>;
-    return decoded.map(
-      (key, value) => MapEntry(
-        key,
-        TokenUsageStats.fromJson(value as Map<String, dynamic>),
-      ),
-    );
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map(
+        (key, value) => MapEntry(
+          key,
+          TokenUsageStats.fromJson(value as Map<String, dynamic>),
+        ),
+      );
+    } on FormatException {
+      return {};
+    } on TypeError {
+      return {};
+    }
   }
 
   @override

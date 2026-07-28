@@ -324,10 +324,10 @@ class _CameraCapturePageState extends State<CameraCapturePage>
       _minZoomLevel = await controller.getMinZoomLevel();
       _maxZoomLevel = await controller.getMaxZoomLevel();
       final defaultZoom = _defaultZoomLevelFor(camera);
-    final enableTorch = _isTorchEnabled && _isBackCamera(camera);
-    await controller.setFlashMode(
-      enableTorch ? FlashMode.torch : FlashMode.off,
-    );
+      final enableTorch = _isTorchEnabled && _isBackCamera(camera);
+      await controller.setFlashMode(
+        enableTorch ? FlashMode.torch : FlashMode.off,
+      );
       await controller.setZoomLevel(defaultZoom);
       if (!mounted) {
         await controller.dispose();
@@ -409,10 +409,13 @@ class _CameraCapturePageState extends State<CameraCapturePage>
     try {
       final appController = AppScope.of(context);
       final photo = await controller.takePicture();
-      await appController.queueCapturedFile(
+      final queued = await appController.queueCapturedFile(
         File(photo.path),
         box: widget.captureBox,
       );
+      if (!queued) {
+        return;
+      }
       if (!mounted) {
         return;
       }
@@ -779,7 +782,6 @@ class _CameraCapturePageState extends State<CameraCapturePage>
     }
     return 'back';
   }
-
 }
 
 class _NativeCameraMetadata {

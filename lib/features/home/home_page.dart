@@ -293,15 +293,44 @@ class HomePage extends StatelessWidget {
   }) async {
     final controller = AppScope.of(context);
     if (Platform.isAndroid) {
-      final streamedPaths = <String>{};
+      final completedPaths = <String>{};
+      final inFlightPaths = <String, Future<bool>>{};
+
+      Future<bool> ingestPath(String path) {
+        final normalized = path.trim();
+        if (normalized.isEmpty || completedPaths.contains(normalized)) {
+          return Future.value(true);
+        }
+        final existing = inFlightPaths[normalized];
+        if (existing != null) {
+          return existing;
+        }
+        late final Future<bool> operation;
+        operation = controller
+            .queueCapturedFile(File(normalized), box: captureBox)
+            .then((succeeded) {
+              if (succeeded) {
+                completedPaths.add(normalized);
+              }
+              return succeeded;
+            })
+            .whenComplete(() {
+              if (identical(inFlightPaths[normalized], operation)) {
+                inFlightPaths.remove(normalized);
+              }
+            });
+        inFlightPaths[normalized] = operation;
+        return operation;
+      }
+
       final subscription = _nativeCameraEvents.receiveBroadcastStream().listen((
         event,
-      ) async {
+      ) {
         final path = event?.toString() ?? '';
-        if (path.trim().isEmpty || !streamedPaths.add(path)) {
+        if (path.trim().isEmpty) {
           return;
         }
-        await controller.queueCapturedFile(File(path), box: captureBox);
+        unawaited(ingestPath(path));
       });
       try {
         final rawPaths =
@@ -312,13 +341,19 @@ class HomePage extends StatelessWidget {
             const [];
         for (final rawPath in rawPaths) {
           final path = rawPath?.toString() ?? '';
-          if (path.trim().isEmpty || !streamedPaths.add(path)) {
+          if (path.trim().isEmpty) {
             continue;
           }
-          await controller.queueCapturedFile(File(path), box: captureBox);
+          final succeeded = await ingestPath(path);
+          if (!succeeded) {
+            await ingestPath(path);
+          }
         }
       } finally {
         await subscription.cancel();
+        if (inFlightPaths.isNotEmpty) {
+          await Future.wait(inFlightPaths.values);
+        }
       }
       return;
     }

@@ -28,6 +28,13 @@ class LocalImageFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final cacheWidth = width == null
+        ? null
+        : (width! * devicePixelRatio).round().clamp(1, 4096).toInt();
+    final cacheHeight = height == null
+        ? null
+        : (height! * devicePixelRatio).round().clamp(1, 4096).toInt();
     final content = Container(
       width: width,
       height: height,
@@ -41,6 +48,8 @@ class LocalImageFrame extends StatelessWidget {
         child: Image.file(
           File(path),
           fit: BoxFit.contain,
+          cacheWidth: cacheWidth,
+          cacheHeight: cacheHeight,
           errorBuilder: (context, error, stackTrace) {
             return const SizedBox.shrink();
           },

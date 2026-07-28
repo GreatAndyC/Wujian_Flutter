@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../data/repositories/local_item_repository.dart';
-import '../data/repositories/local_pending_queue_repository.dart';
+import '../data/repositories/local_catalog_repository.dart';
 import '../data/repositories/local_settings_repository.dart';
 import '../data/repositories/local_token_usage_repository.dart';
 import '../data/repositories/volcengine_recognition_repository.dart';
@@ -22,10 +21,10 @@ class WujianApp extends StatelessWidget {
 
   static Future<WujianApp> bootstrap() async {
     final mediaStorageService = MediaStorageService();
+    final catalogRepository = LocalCatalogRepository();
     final controller = AppController(
       settingsRepository: LocalSettingsRepository(),
-      itemRepository: LocalItemRepository(),
-      pendingQueueRepository: LocalPendingQueueRepository(),
+      catalogRepository: catalogRepository,
       recognitionRepository: OpenAiCompatibleRecognitionRepository(),
       tokenUsageRepository: LocalTokenUsageRepository(),
       pdfExportService: PdfExportService(mediaStorageService),

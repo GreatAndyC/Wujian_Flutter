@@ -555,6 +555,11 @@ class _StorageSection extends StatelessWidget {
             const SizedBox(height: 14),
             _MetricRow(label: '图片数量', value: '${usage.imageCount}'),
             _MetricRow(label: '图片占用', value: _formatBytes(usage.imageBytes)),
+            _MetricRow(label: '相机临时图', value: '${usage.captureCacheCount}'),
+            _MetricRow(
+              label: '临时图占用',
+              value: _formatBytes(usage.captureCacheBytes),
+            ),
             _MetricRow(label: '导出文件', value: '${usage.exportCount}'),
             _MetricRow(label: '导出占用', value: _formatBytes(usage.exportBytes)),
             _MetricRow(label: '合计', value: _formatBytes(usage.totalBytes)),

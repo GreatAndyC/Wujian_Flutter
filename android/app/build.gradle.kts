@@ -5,6 +5,30 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val releaseStorePath = System.getenv("WUJIAN_RELEASE_STORE_FILE")
+val releaseStorePassword = System.getenv("WUJIAN_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = System.getenv("WUJIAN_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("WUJIAN_RELEASE_KEY_PASSWORD")
+val releaseSigningReady =
+    listOf(
+        releaseStorePath,
+        releaseStorePassword,
+        releaseKeyAlias,
+        releaseKeyPassword,
+    ).all { !it.isNullOrBlank() }
+val requestedReleaseBuild =
+    gradle.startParameter.taskNames.any { taskName ->
+        taskName.contains("release", ignoreCase = true)
+    }
+
+if (requestedReleaseBuild && !releaseSigningReady) {
+    throw GradleException(
+        "Release signing is not configured. Set WUJIAN_RELEASE_STORE_FILE, " +
+            "WUJIAN_RELEASE_STORE_PASSWORD, WUJIAN_RELEASE_KEY_ALIAS and " +
+            "WUJIAN_RELEASE_KEY_PASSWORD.",
+    )
+}
+
 android {
     namespace = "com.wujian.app.icheck"
     compileSdk = flutter.compileSdkVersion
@@ -20,21 +44,29 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.wujian.app.icheck"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = file(releaseStorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }
