@@ -390,13 +390,7 @@ git push origin v1.0.4
 
 ## 许可证
 
-当前仓库里还没有看到明确的开源许可证文件。
-
-如果你打算公开发布，建议尽快补一个 `LICENSE`，例如：
-
-- `MIT`
-- `Apache-2.0`
-- `GPL-3.0`
+本项目采用 [MIT License](LICENSE) 开源。
 
 ## 致谢
 
