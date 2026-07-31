@@ -1,4 +1,4 @@
-# 无间 · iCheck
+# 物见
 
 <div align="center">
   <p><strong>把拍照、AI 识别与物品归档连成一条顺手的移动工作流。</strong></p>
@@ -24,9 +24,9 @@
 | --- | --- | --- |
 | ![拍摄与任务队列](https://caoyueyang.org/images/work/wujian/capture-queue.webp) | ![物品档案](https://caoyueyang.org/images/work/wujian/inventory-view.webp) | ![模型设置](https://caoyueyang.org/images/work/wujian/model-settings.webp) |
 
-## 为什么做无间
+## 为什么做物见
 
-相册适合保存照片，却不擅长回答“这是什么、放在哪里、什么时候买的”。无间把一次拍摄拆成可恢复的后台任务，经由用户选择的 AI 服务提取物品信息，再落入可检索、可维护的本地档案。
+相册适合保存照片，却不擅长回答“这是什么、放在哪里、什么时候买的”。物见把一次拍摄拆成可恢复的后台任务，经由用户选择的 AI 服务提取物品信息，再落入可检索、可维护的本地档案。
 
 它适合这些场景：
 
