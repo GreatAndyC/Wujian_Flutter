@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../domain/entities/item_record.dart';
 import '../../domain/repositories/catalog_repository.dart';
+import '../services/storage_mutation_coordinator.dart';
 
 typedef DocumentsDirectoryProvider = Future<Directory> Function();
 
@@ -24,8 +25,8 @@ class LocalCatalogRepository implements CatalogRepository {
 
   @override
   Future<CatalogSnapshot> loadCatalog() {
-    return _serialize(() async {
-      final primary = await _catalogFile();
+    return _coordinateMutation((root) async {
+      final primary = await _catalogFile(root);
       final backup = File('${primary.path}$_backupSuffix');
       final primaryResult = await _tryReadSnapshot(primary);
       if (primaryResult != null) {
@@ -50,14 +51,13 @@ class LocalCatalogRepository implements CatalogRepository {
 
   @override
   Future<void> saveCatalog(CatalogSnapshot snapshot) {
-    return _serialize(() async {
-      final target = await _catalogFile();
+    return _coordinateMutation((root) async {
+      final target = await _catalogFile(root);
       await _writeSnapshot(target, snapshot);
     });
   }
 
-  Future<File> _catalogFile() async {
-    final root = await _documentsDirectoryProvider();
+  Future<File> _catalogFile(Directory root) async {
     await root.create(recursive: true);
     return File('${root.path}${Platform.pathSeparator}$_catalogFileName');
   }
@@ -244,5 +244,13 @@ class LocalCatalogRepository implements CatalogRepository {
     } finally {
       gate.complete();
     }
+  }
+
+  Future<T> _coordinateMutation<T>(Future<T> Function(Directory root) action) {
+    return StorageMutationCoordinator.shared.runWithRootProvider(
+      _documentsDirectoryProvider,
+      (canonicalRoot) => _serialize(() => action(canonicalRoot)),
+      rejectWhenExclusive: true,
+    );
   }
 }

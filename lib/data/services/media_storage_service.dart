@@ -8,9 +8,13 @@ import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 
 import '../../domain/entities/storage_usage_summary.dart';
+import 'storage_mutation_coordinator.dart';
 
 typedef StorageDirectoryProvider = Future<Directory> Function();
 typedef StorageTimestampProvider = DateTime Function();
+
+const _maxSourceImageDimension = 4096;
+const _maxSourceImagePixels = 16 * 1024 * 1024;
 
 class MediaStorageService {
   MediaStorageService({
@@ -32,8 +36,22 @@ class MediaStorageService {
   Future<void> _storageMutation = Future.value();
   var _exportSequence = 0;
 
+  /// Runs a catalog-and-media mutation under one shared documents-root lock.
+  ///
+  /// Calls to this service or to a coordinated catalog repository from inside
+  /// [action] re-enter the same Zone-owned coordinator slot. The method
+  /// deliberately does not take the instance-only media gate itself, because
+  /// an inner [persistImage] or [optimizeStorage] call owns that narrower gate.
+  Future<T> runStorageTransaction<T>(Future<T> Function() action) {
+    return StorageMutationCoordinator.shared.runWithRootProvider(
+      _documentsDirectoryProvider,
+      (_) => action(),
+      rejectWhenExclusive: true,
+    );
+  }
+
   Future<File> persistImage(File source, {bool deleteTemporarySource = true}) {
-    return _serializeMutation(() async {
+    return _coordinateMutation((canonicalRoot) async {
       if (!await source.exists()) {
         throw const FileSystemException('拍摄的临时图片不存在');
       }
@@ -44,7 +62,7 @@ class MediaStorageService {
           throw const FormatException('拍摄的图片内容为空');
         }
         final prepared = await _preparePersistedImageInBackground(sourceBytes);
-        final imagesDirectory = await _imagesDirectory();
+        final imagesDirectory = await _imagesDirectory(canonicalRoot);
         final target = await _resolveTarget(
           imagesDirectory,
           prepared.bytes,
@@ -80,80 +98,107 @@ class MediaStorageService {
   }
 
   Future<void> deleteTransientSource(File source) {
-    return _serializeMutation(() => _cleanupSource(source, ''));
+    return _coordinateMutation((_) => _cleanupSource(source, ''));
   }
 
-  Future<StorageUsageSummary> computeUsage() async {
-    final imagesDirectory = await _imagesDirectory();
-    final tempDirectory = await _temporaryDirectoryProvider();
-    final legacyDocumentsDirectory = await _documentsDirectoryProvider();
+  Future<StorageUsageSummary> computeUsage() {
+    return StorageMutationCoordinator.shared.runWithRootProvider(
+      _documentsDirectoryProvider,
+      (canonicalRoot) async {
+        final imagesDirectory = await _imagesDirectory(canonicalRoot);
+        final tempDirectory = await _temporaryDirectory();
+        final tempExports = await _requiredDirectoryNoFollow(
+          Directory('${tempDirectory.path}${Platform.pathSeparator}exports'),
+          errorMessage: '临时导出目录不可用',
+        );
+        final legacyExportsDirectory = await _optionalDirectoryNoFollow(
+          Directory('${canonicalRoot.path}${Platform.pathSeparator}exports'),
+        );
 
-    final imageFiles = (await _listFiles(
-      imagesDirectory,
-    )).where(_isSupportedImageFile).toList();
-    final cachedExports = await _listFiles(
-      Directory('${tempDirectory.path}${Platform.pathSeparator}exports'),
-    );
-    final legacyExports = await _listFiles(
-      Directory(
-        '${legacyDocumentsDirectory.path}${Platform.pathSeparator}exports',
-      ),
-    );
-    final captureCacheFiles = await _captureCacheFiles(tempDirectory);
-    final allExports = [...cachedExports, ...legacyExports];
+        final imageFiles = (await _listFiles(
+          imagesDirectory,
+        )).where(_isSupportedImageFile).toList();
+        final cachedExports = await _listFiles(tempExports);
+        final legacyExports = legacyExportsDirectory == null
+            ? const <File>[]
+            : await _listFiles(legacyExportsDirectory);
+        final captureCacheFiles = await _captureCacheFiles(tempDirectory);
+        final allExports = [...cachedExports, ...legacyExports];
 
-    return StorageUsageSummary(
-      imageCount: imageFiles.length,
-      imageBytes: await _sumFileSizes(imageFiles),
-      captureCacheCount: captureCacheFiles.length,
-      captureCacheBytes: await _sumFileSizes(captureCacheFiles),
-      exportCount: allExports.length,
-      exportBytes: await _sumFileSizes(allExports),
+        return StorageUsageSummary(
+          imageCount: imageFiles.length,
+          imageBytes: await _sumFileSizes(imageFiles),
+          captureCacheCount: captureCacheFiles.length,
+          captureCacheBytes: await _sumFileSizes(captureCacheFiles),
+          exportCount: allExports.length,
+          exportBytes: await _sumFileSizes(allExports),
+        );
+      },
+      rejectWhenExclusive: true,
+    );
+  }
+
+  /// Resolves a catalog image reference without trusting the process working
+  /// directory. Relative references are anchored to the canonical documents
+  /// root and must remain inside it after lexical and symbolic-link resolution.
+  Future<File?> resolveImageReference(String imagePath) {
+    return StorageMutationCoordinator.shared.runWithRootProvider(
+      _documentsDirectoryProvider,
+      (canonicalRoot) => _resolveImageReference(canonicalRoot, imagePath),
+      rejectWhenExclusive: true,
     );
   }
 
   Future<void> optimizeStorage({
     required Iterable<String> referencedImagePaths,
   }) {
-    final referenced = referencedImagePaths
+    final rawReferences = referencedImagePaths
         .map((path) => path.trim())
         .where((path) => path.isNotEmpty)
         .toSet();
-    return _serializeMutation(() async {
-      final imagesDirectory = await _imagesDirectory();
+    return _coordinateMutation((canonicalRoot) async {
+      final referenced = <String>{};
+      for (final path in rawReferences) {
+        final resolved = await _resolveImageReference(canonicalRoot, path);
+        if (resolved != null) {
+          referenced.add(_normalizedAbsolute(resolved.path));
+        }
+      }
+      final imagesDirectory = await _imagesDirectory(canonicalRoot);
       final imageFiles = await _listFiles(imagesDirectory);
       for (final file in imageFiles) {
-        if (!referenced.contains(file.path)) {
+        if (_isManagedImageFile(file) &&
+            !referenced.contains(_normalizedAbsolute(file.path))) {
           await _safeDelete(file);
         }
       }
 
       await _pruneTransientCaptureCache(olderThan: _automaticCacheRetention);
-      await _pruneExports();
+      await _pruneExports(canonicalRoot);
     });
   }
 
   Future<void> pruneExports({Iterable<String> protectedPaths = const []}) {
-    final protected = protectedPaths
-        .map((path) => File(path).absolute.path)
-        .toSet();
-    return _serializeMutation(() => _pruneExports(protectedPaths: protected));
+    final protected = protectedPaths.map(_normalizedAbsolute).toSet();
+    return _coordinateMutation(
+      (canonicalRoot) =>
+          _pruneExports(canonicalRoot, protectedPaths: protected),
+    );
   }
 
   Future<void> clearTransientCache() {
-    return _serializeMutation(() async {
+    return _coordinateMutation((canonicalRoot) async {
       await _pruneTransientCaptureCache();
-      await _pruneExports();
+      await _pruneExports(canonicalRoot);
     });
   }
 
   Future<Directory> exportsDirectory() async {
-    final tempDirectory = await _temporaryDirectoryProvider();
-    final directory = Directory(
-      '${tempDirectory.path}${Platform.pathSeparator}exports',
+    final tempDirectory = await _temporaryDirectory();
+    return _requiredDirectoryNoFollow(
+      Directory('${tempDirectory.path}${Platform.pathSeparator}exports'),
+      errorMessage: '临时导出目录不可用',
     );
-    await directory.create(recursive: true);
-    return directory;
   }
 
   Future<File> writeExportBytes({
@@ -173,7 +218,7 @@ class MediaStorageService {
     }
     final payload = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
 
-    return _serializeMutation(() async {
+    return _coordinateMutation((canonicalRoot) async {
       final directory = await exportsDirectory();
       final timestamp = _timestampProvider().toUtc().microsecondsSinceEpoch;
       for (var attempt = 0; attempt < 1000; attempt++) {
@@ -186,23 +231,27 @@ class MediaStorageService {
           continue;
         }
         await _writeBytesAtomically(file, payload);
-        await _pruneExports(protectedPaths: {file.absolute.path});
+        await _pruneExports(
+          canonicalRoot,
+          protectedPaths: {_normalizedAbsolute(file.path)},
+        );
         return file;
       }
       throw const FileSystemException('无法为导出文件分配唯一名称');
     });
   }
 
-  Future<void> _pruneExports({Set<String> protectedPaths = const {}}) async {
-    final tempDirectory = await _temporaryDirectoryProvider();
-    final tempExports = Directory(
-      '${tempDirectory.path}${Platform.pathSeparator}exports',
+  Future<void> _pruneExports(
+    Directory canonicalRoot, {
+    Set<String> protectedPaths = const {},
+  }) async {
+    final tempDirectory = await _temporaryDirectory();
+    final tempExports = await _requiredDirectoryNoFollow(
+      Directory('${tempDirectory.path}${Platform.pathSeparator}exports'),
+      errorMessage: '临时导出目录不可用',
     );
-    await tempExports.create(recursive: true);
-
-    final legacyDocumentsDirectory = await _documentsDirectoryProvider();
-    final legacyExports = Directory(
-      '${legacyDocumentsDirectory.path}${Platform.pathSeparator}exports',
+    final legacyExports = await _optionalDirectoryNoFollow(
+      Directory('${canonicalRoot.path}${Platform.pathSeparator}exports'),
     );
 
     final tempFiles = await _listFiles(tempExports);
@@ -211,9 +260,11 @@ class MediaStorageService {
         tempFiles.map((file) async => (file: file, stat: await file.stat())),
       );
       filesWithStats.sort((left, right) {
-        final leftProtected = protectedPaths.contains(left.file.absolute.path);
+        final leftProtected = protectedPaths.contains(
+          _normalizedAbsolute(left.file.path),
+        );
         final rightProtected = protectedPaths.contains(
-          right.file.absolute.path,
+          _normalizedAbsolute(right.file.path),
         );
         if (leftProtected != rightProtected) {
           return leftProtected ? -1 : 1;
@@ -225,14 +276,16 @@ class MediaStorageService {
       }
     }
 
-    final oldFiles = await _listFiles(legacyExports);
-    for (final file in oldFiles) {
-      await _safeDelete(file);
+    if (legacyExports != null) {
+      final oldFiles = await _listFiles(legacyExports);
+      for (final file in oldFiles) {
+        await _safeDelete(file);
+      }
     }
   }
 
   Future<void> _pruneTransientCaptureCache({Duration? olderThan}) async {
-    final tempDirectory = await _temporaryDirectoryProvider();
+    final tempDirectory = await _temporaryDirectory();
     final files = await _captureCacheFiles(tempDirectory);
     final cutoff = olderThan == null
         ? null
@@ -265,18 +318,102 @@ class MediaStorageService {
     }).toList();
   }
 
-  Future<Directory> _imagesDirectory() async {
-    final root = await _documentsDirectoryProvider();
-    final directory = Directory('${root.path}${Platform.pathSeparator}images');
-    await directory.create(recursive: true);
-    return directory;
+  Future<Directory> _imagesDirectory(Directory canonicalRoot) {
+    return _requiredDirectoryNoFollow(
+      Directory('${canonicalRoot.path}${Platform.pathSeparator}images'),
+      errorMessage: '图片存储目录不可用',
+    );
+  }
+
+  Future<Directory> _temporaryDirectory() async {
+    try {
+      final supplied = await _temporaryDirectoryProvider();
+      if (await FileSystemEntity.type(supplied.path, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        throw const FileSystemException('临时存储目录不可用');
+      }
+      return supplied;
+    } on Object {
+      throw const FileSystemException('临时存储目录不可用');
+    }
+  }
+
+  Future<Directory> _requiredDirectoryNoFollow(
+    Directory directory, {
+    required String errorMessage,
+  }) async {
+    try {
+      var type = await FileSystemEntity.type(
+        directory.path,
+        followLinks: false,
+      );
+      if (type == FileSystemEntityType.notFound) {
+        await directory.create();
+        type = await FileSystemEntity.type(directory.path, followLinks: false);
+      }
+      if (type != FileSystemEntityType.directory) {
+        throw FileSystemException(errorMessage);
+      }
+      return directory;
+    } on Object {
+      throw FileSystemException(errorMessage);
+    }
+  }
+
+  Future<Directory?> _optionalDirectoryNoFollow(Directory directory) async {
+    try {
+      final type = await FileSystemEntity.type(
+        directory.path,
+        followLinks: false,
+      );
+      return type == FileSystemEntityType.directory ? directory : null;
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<File?> _resolveImageReference(
+    Directory canonicalRoot,
+    String imagePath,
+  ) async {
+    final trimmed = imagePath.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    try {
+      final supplied = File(trimmed);
+      final isRelative = !supplied.isAbsolute;
+      final candidatePath = isRelative
+          ? _normalizedAbsolute(
+              '${canonicalRoot.path}${Platform.pathSeparator}$trimmed',
+            )
+          : _normalizedAbsolute(trimmed);
+      final canonicalRootPath = _normalizedAbsolute(canonicalRoot.path);
+      if (isRelative && !_isPathWithin(candidatePath, canonicalRootPath)) {
+        return null;
+      }
+      if (await FileSystemEntity.type(candidatePath, followLinks: false) !=
+          FileSystemEntityType.file) {
+        return null;
+      }
+      final resolved = _normalizedPath(
+        await File(candidatePath).resolveSymbolicLinks(),
+      );
+      if (isRelative && !_isPathWithin(resolved, canonicalRootPath)) {
+        return null;
+      }
+      return File(resolved);
+    } on Object {
+      return null;
+    }
   }
 
   Future<List<File>> _listFiles(
     Directory directory, {
     bool recursive = false,
   }) async {
-    if (!await directory.exists()) {
+    if (await FileSystemEntity.type(directory.path, followLinks: false) !=
+        FileSystemEntityType.directory) {
       return const [];
     }
 
@@ -340,13 +477,20 @@ class MediaStorageService {
   }
 
   bool _isPathWithin(String candidate, String root) {
-    final normalizedCandidate = Platform.isWindows
-        ? candidate.toLowerCase()
-        : candidate;
-    final normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
+    final normalizedCandidate = _normalizedPath(candidate);
+    final normalizedRoot = _normalizedPath(root);
     return normalizedCandidate.startsWith(
       '$normalizedRoot${Platform.pathSeparator}',
     );
+  }
+
+  String _normalizedAbsolute(String path) {
+    final absolute = File(path).absolute.uri.normalizePath().toFilePath();
+    return _normalizedPath(absolute);
+  }
+
+  String _normalizedPath(String path) {
+    return Platform.isWindows ? path.toLowerCase() : path;
   }
 
   bool _isSupportedImageFile(File file) {
@@ -356,6 +500,16 @@ class MediaStorageService {
         lowerPath.endsWith('.png') ||
         lowerPath.endsWith('.webp') ||
         lowerPath.endsWith('.heic');
+  }
+
+  bool _isManagedImageFile(File file) {
+    if (_isSupportedImageFile(file)) {
+      return true;
+    }
+    final fileName = file.uri.pathSegments.last.toLowerCase();
+    return RegExp(
+      r'^(?:v2-)?[0-9a-f]{64}\.(?:jpe?g|png|webp|heic)\.tmp-[a-z0-9_-]+$',
+    ).hasMatch(fileName);
   }
 
   Future<void> _writeBytesAtomically(File target, Uint8List bytes) async {
@@ -432,6 +586,16 @@ class MediaStorageService {
       gate.complete();
     }
   }
+
+  Future<T> _coordinateMutation<T>(
+    Future<T> Function(Directory canonicalRoot) action,
+  ) {
+    return StorageMutationCoordinator.shared.runWithRootProvider(
+      _documentsDirectoryProvider,
+      (canonicalRoot) => _serializeMutation(() => action(canonicalRoot)),
+      rejectWhenExclusive: true,
+    );
+  }
 }
 
 Future<({Uint8List bytes, String candidateDigest, String collisionDigest})>
@@ -440,6 +604,8 @@ _preparePersistedImageInBackground(Uint8List sourceBytes) {
     final encoded = _preparePersistedJpeg(
       sourceBytes,
       maxImageDimension: 2048,
+      maxSourceImageDimension: _maxSourceImageDimension,
+      maxSourceImagePixels: _maxSourceImagePixels,
       jpegQuality: 82,
     );
     final digests = _preparedImageDigests(encoded);
@@ -612,11 +778,26 @@ int _channelByte(num value) => value.round().clamp(0, 255).toInt();
 Uint8List _preparePersistedJpeg(
   Uint8List sourceBytes, {
   required int maxImageDimension,
+  required int maxSourceImageDimension,
+  required int maxSourceImagePixels,
   required int jpegQuality,
 }) {
   img.Image? decoded;
   try {
-    decoded = img.decodeImage(sourceBytes);
+    final decoder = img.findDecoderForData(sourceBytes);
+    final info = decoder?.startDecode(sourceBytes);
+    if (decoder == null ||
+        info == null ||
+        info.width <= 0 ||
+        info.height <= 0 ||
+        info.width > maxSourceImageDimension ||
+        info.height > maxSourceImageDimension ||
+        info.width * info.height > maxSourceImagePixels) {
+      throw const FormatException('拍摄的图片尺寸不安全');
+    }
+    decoded = decoder.decodeFrame(0);
+  } on FormatException {
+    rethrow;
   } catch (_) {
     throw const FormatException('无法解码拍摄的图片');
   }

@@ -111,17 +111,19 @@ class AppController extends ChangeNotifier {
 
   Future<void> initialize() async {
     _settingsStore = await _settingsRepository.loadSettingsStore();
-    final catalog = await _catalogRepository.loadCatalog();
-    _items = [...catalog.items]
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final hadInterruptedItems = catalog.pendingItems.any(
-      (item) => item.queueState == QueueRecognitionState.processing,
-    );
-    _pendingQueue = _restoreInterruptedQueue(catalog.pendingItems)
-      ..sort(_comparePendingItems);
-    if (hadInterruptedItems) {
-      await _saveCatalog();
-    }
+    await _mediaStorageService.runStorageTransaction(() async {
+      final catalog = await _catalogRepository.loadCatalog();
+      _items = [...catalog.items]
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      final hadInterruptedItems = catalog.pendingItems.any(
+        (item) => item.queueState == QueueRecognitionState.processing,
+      );
+      _pendingQueue = _restoreInterruptedQueue(catalog.pendingItems)
+        ..sort(_comparePendingItems);
+      if (hadInterruptedItems) {
+        await _saveCatalog();
+      }
+    });
     _usageStatsByProfileId = await _tokenUsageRepository.loadUsageStats();
     await _refreshStorageUsage();
     _isReady = true;
@@ -699,14 +701,18 @@ class AppController extends ChangeNotifier {
     final gate = Completer<void>();
     _catalogMutation = gate.future;
     await previous.catchError((_) {});
-    final previousItems = _items;
-    final previousPendingQueue = _pendingQueue;
     try {
-      return await action();
-    } catch (_) {
-      _items = previousItems;
-      _pendingQueue = previousPendingQueue;
-      rethrow;
+      return await _mediaStorageService.runStorageTransaction(() async {
+        final previousItems = _items;
+        final previousPendingQueue = _pendingQueue;
+        try {
+          return await action();
+        } catch (_) {
+          _items = previousItems;
+          _pendingQueue = previousPendingQueue;
+          rethrow;
+        }
+      });
     } finally {
       gate.complete();
     }
@@ -750,8 +756,10 @@ class AppController extends ChangeNotifier {
         .toList();
     var failures = 0;
     for (final legacyPath in legacyPaths) {
-      final source = File(legacyPath);
-      if (!await source.exists()) {
+      final source = await _mediaStorageService.resolveImageReference(
+        legacyPath,
+      );
+      if (source == null) {
         continue;
       }
       File? normalized;

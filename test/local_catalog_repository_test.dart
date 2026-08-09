@@ -104,7 +104,7 @@ void main() {
 
   test('并发保存会串行执行且最后一次写入完整可读', () async {
     final saves = [
-      for (var index = 0; index < 5; index++)
+      for (var index = 0; index < 20; index++)
         repository.saveCatalog(
           CatalogSnapshot(
             items: [_item(id: 'item-$index', name: '物品$index')],
@@ -116,7 +116,7 @@ void main() {
     await Future.wait(saves);
     final loaded = await repository.loadCatalog();
 
-    expect(loaded.items.single.id, 'item-4');
+    expect(loaded.items.single.id, 'item-19');
   });
 }
 

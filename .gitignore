@@ -50,6 +50,23 @@ migrate_working_dir/
 **/GoogleService-Info.plist
 **/Secrets.xcconfig
 **/firebase-adminsdk*.json
+**/*service-account*.json
+**/*service_account*.json
+**/application_default_credentials.json
+!**/*service-account*.example.json
+!**/*service-account*.template.json
+!**/*service_account*.example.json
+!**/*service_account*.template.json
+.aws/
+.azure/
+.gcloud/
+.kube/
+.netrc
+.npmrc
+.pypirc
+!.netrc.example
+!.npmrc.example
+!.pypirc.example
 
 # Flutter/Dart/Pub related
 **/doc/api/

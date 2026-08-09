@@ -276,6 +276,46 @@ void main() {
     );
   });
 
+  test('启动迁移按 canonical documents root 解析旧 catalog 相对图片路径', () async {
+    final legacyImages = Directory('${documents.path}/images');
+    await legacyImages.create(recursive: true);
+    final legacy = File('${legacyImages.path}/legacy-relative.jpg');
+    await legacy.writeAsBytes(_jpeg(width: 960, height: 640));
+    final catalog = _MemoryCatalogRepository(
+      CatalogSnapshot(
+        items: [
+          _item(
+            id: 'legacy-relative',
+            imagePath: 'images/legacy-relative.jpg',
+            queueState: QueueRecognitionState.ready,
+          ),
+        ],
+        pendingItems: const [],
+      ),
+    );
+    final controller = _controller(
+      catalog: catalog,
+      mediaStorage: mediaStorage,
+      recognition: _ImmediateRecognitionRepository(),
+    );
+
+    await controller.initialize();
+    await _waitUntil(
+      () =>
+          RegExp(
+            r'/v2-[0-9a-f]{64}\.jpg$',
+          ).hasMatch(controller.items.single.imagePath) &&
+          !controller.isBusy,
+    );
+
+    final migratedPath = controller.items.single.imagePath;
+    expect(File(migratedPath).isAbsolute, isTrue);
+    expect(await File(migratedPath).exists(), isTrue);
+    expect(await legacy.exists(), isFalse);
+    expect(catalog.savedSnapshots.last.items.single.imagePath, migratedPath);
+    expect((await mediaStorage.computeUsage()).imageCount, 1);
+  });
+
   test('旧版临时图迁移保存失败时保留源图，重试成功且幂等', () async {
     final legacy = File('${temporary.path}/legacy-retry.jpg');
     await legacy.writeAsBytes(_jpeg(width: 960, height: 640));
@@ -337,7 +377,7 @@ void main() {
         items: [
           _item(
             id: 'broken-legacy',
-            imagePath: broken.path,
+            imagePath: 'images/broken-legacy.jpg',
             queueState: QueueRecognitionState.ready,
           ),
           _item(
@@ -364,7 +404,7 @@ void main() {
     final validRecord = controller.items.singleWhere(
       (item) => item.id == 'valid-legacy',
     );
-    expect(brokenRecord.imagePath, broken.path);
+    expect(brokenRecord.imagePath, 'images/broken-legacy.jpg');
     expect(await broken.readAsBytes(), brokenBytes);
     expect(validRecord.imagePath, isNot(valid.path));
     expect(await valid.exists(), isFalse);

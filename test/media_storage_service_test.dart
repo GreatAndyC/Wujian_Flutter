@@ -158,6 +158,19 @@ void main() {
     expect(await persisted.exists(), isFalse);
   });
 
+  test('优化按 canonical documents root 解析相对图片引用', () async {
+    final source = File('${temporary.path}/relative-reference.jpg');
+    await source.writeAsBytes(_jpeg(width: 320, height: 240));
+    final persisted = await service.persistImage(source);
+    final relativeReference =
+        'images${Platform.pathSeparator}..${Platform.pathSeparator}images'
+        '${Platform.pathSeparator}${persisted.uri.pathSegments.last}';
+
+    await service.optimizeStorage(referencedImagePaths: [relativeReference]);
+
+    expect(await persisted.exists(), isTrue);
+  });
+
   test('连续拍摄并发保存时按内容去重并记录存储指标', () async {
     final sources = <File>[];
     for (var index = 0; index < 12; index++) {
@@ -224,8 +237,10 @@ void main() {
     final images = Directory('${documents.path}/images');
     final orphan = File('${images.path}/${'f' * 64}.jpg');
     final interrupted = File('${images.path}/${'e' * 64}.jpg.tmp-interrupted');
+    final sidecar = File('${images.path}/restore-state.json');
     await referenced.copy(orphan.path);
     await interrupted.writeAsBytes(const [1, 2, 3, 4]);
+    await sidecar.writeAsString('{"keep":true}');
 
     final before = await service.computeUsage();
     expect(before.imageCount, 2);
@@ -237,6 +252,7 @@ void main() {
     expect(await referenced.exists(), isTrue);
     expect(await orphan.exists(), isFalse);
     expect(await interrupted.exists(), isFalse);
+    expect(await sidecar.exists(), isTrue);
     expect(after.imageCount, 1);
     expect(after.imageBytes, referencedBytes);
     expect(after.captureCacheCount, 0);
@@ -295,6 +311,22 @@ void main() {
     expect(await actualTraversalTarget.exists(), isTrue);
   });
 
+  test('小字节超大声明尺寸在完整像素解码前被拒绝且错误文本安全', () async {
+    const marker = 'SYNTHETIC-HUGE-BMP-48af';
+    final source = File('${temporary.path}/$marker.bmp');
+    await source.writeAsBytes(_declaredBmp(width: 4097, height: 4096));
+
+    final error = await _captureError(
+      service.persistImage(source).then<void>((_) {}),
+    );
+
+    expect(error, isA<FormatException>());
+    expect(error.toString(), contains('拍摄的图片尺寸不安全'));
+    expect(error.toString(), isNot(contains(marker)));
+    expect(await source.exists(), isFalse);
+    expect(await Directory('${documents.path}/images').exists(), isFalse);
+  });
+
   test('导出清理最多保留六个临时导出并清除旧目录', () async {
     final exports = Directory('${temporary.path}/exports');
     final legacyExports = Directory('${documents.path}/exports');
@@ -331,6 +363,107 @@ void main() {
       'afterBytes=${after.exportBytes}',
     );
   });
+
+  test(
+    'images 为外部目录软链接时优化拒绝且不删除链接目标',
+    () async {
+      const marker = 'SYNTHETIC-EXTERNAL-IMAGES-62b1';
+      final external = await Directory.systemTemp.createTemp(marker);
+      addTearDown(() async {
+        if (await external.exists()) {
+          await external.delete(recursive: true);
+        }
+      });
+      final sentinel = File('${external.path}/keep.jpg');
+      await sentinel.writeAsBytes(_jpeg(width: 32, height: 32));
+      await Link('${documents.path}/images').create(external.path);
+
+      final error = await _captureError(
+        service.optimizeStorage(referencedImagePaths: const []),
+      );
+
+      expect(error, isA<FileSystemException>());
+      expect(error.toString(), contains('图片存储目录不可用'));
+      expect(error.toString(), isNot(contains(marker)));
+      expect(await sentinel.exists(), isTrue);
+    },
+    skip: Platform.isWindows ? 'Windows 测试环境不保证允许创建软链接' : false,
+  );
+
+  test(
+    '临时 exports 为外部目录软链接时清理拒绝且不删除链接目标',
+    () async {
+      const marker = 'SYNTHETIC-EXTERNAL-TEMP-EXPORTS-09dc';
+      final external = await Directory.systemTemp.createTemp(marker);
+      addTearDown(() async {
+        if (await external.exists()) {
+          await external.delete(recursive: true);
+        }
+      });
+      final sentinel = File('${external.path}/keep.md');
+      await sentinel.writeAsString('keep');
+      await Link('${temporary.path}/exports').create(external.path);
+
+      final error = await _captureError(service.clearTransientCache());
+
+      expect(error, isA<FileSystemException>());
+      expect(error.toString(), contains('临时导出目录不可用'));
+      expect(error.toString(), isNot(contains(marker)));
+      expect(await sentinel.exists(), isTrue);
+    },
+    skip: Platform.isWindows ? 'Windows 测试环境不保证允许创建软链接' : false,
+  );
+
+  test(
+    '旧版 documents exports 为软链接时跳过清理并保留目标',
+    () async {
+      final external = await Directory.systemTemp.createTemp(
+        'wujian-legacy-exports-',
+      );
+      addTearDown(() async {
+        if (await external.exists()) {
+          await external.delete(recursive: true);
+        }
+      });
+      final sentinel = File('${external.path}/keep.md');
+      await sentinel.writeAsString('keep');
+      await Link('${documents.path}/exports').create(external.path);
+
+      await service.optimizeStorage(referencedImagePaths: const []);
+
+      expect(await sentinel.exists(), isTrue);
+    },
+    skip: Platform.isWindows ? 'Windows 测试环境不保证允许创建软链接' : false,
+  );
+}
+
+Future<Object> _captureError(Future<void> future) async {
+  try {
+    await future;
+  } catch (error) {
+    return error;
+  }
+  fail('Expected the operation to fail.');
+}
+
+List<int> _declaredBmp({required int width, required int height}) {
+  final bytes = List<int>.filled(54, 0);
+  bytes[0] = 0x42;
+  bytes[1] = 0x4d;
+  _writeUint32Le(bytes, 2, bytes.length);
+  _writeUint32Le(bytes, 10, bytes.length);
+  _writeUint32Le(bytes, 14, 40);
+  _writeUint32Le(bytes, 18, width);
+  _writeUint32Le(bytes, 22, height);
+  bytes[26] = 1;
+  bytes[28] = 24;
+  return bytes;
+}
+
+void _writeUint32Le(List<int> bytes, int offset, int value) {
+  for (var index = 0; index < 4; index++) {
+    bytes[offset + index] = (value >> (index * 8)) & 0xff;
+  }
 }
 
 List<int> _jpeg({
