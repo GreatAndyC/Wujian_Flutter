@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'media_storage_service.dart';
@@ -38,13 +39,11 @@ class MarkdownExportService {
       buffer.writeln();
     }
 
-    final directory = await _mediaStorageService.exportsDirectory();
-    final file = File(
-      '${directory.path}${Platform.pathSeparator}wujian-${grouping.name}-${DateTime.now().millisecondsSinceEpoch}.md',
+    return _mediaStorageService.writeExportBytes(
+      baseName: 'wujian-${grouping.name}',
+      extension: 'md',
+      bytes: utf8.encode(buffer.toString()),
     );
-    await file.writeAsString(buffer.toString(), flush: true);
-    await _mediaStorageService.pruneExports();
-    return file;
   }
 
   Map<String, List<ItemRecord>> _groupItems(

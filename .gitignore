@@ -62,6 +62,7 @@ migrate_working_dir/
 /coverage/
 .cache/
 **/.cache/
+/cache/
 /tmp/
 /temp/
 

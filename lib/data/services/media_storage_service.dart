@@ -10,22 +10,27 @@ import 'package:path_provider/path_provider.dart';
 import '../../domain/entities/storage_usage_summary.dart';
 
 typedef StorageDirectoryProvider = Future<Directory> Function();
+typedef StorageTimestampProvider = DateTime Function();
 
 class MediaStorageService {
   MediaStorageService({
     StorageDirectoryProvider? documentsDirectoryProvider,
     StorageDirectoryProvider? temporaryDirectoryProvider,
+    StorageTimestampProvider? timestampProvider,
   }) : _documentsDirectoryProvider =
            documentsDirectoryProvider ?? getApplicationDocumentsDirectory,
        _temporaryDirectoryProvider =
-           temporaryDirectoryProvider ?? getTemporaryDirectory;
+           temporaryDirectoryProvider ?? getTemporaryDirectory,
+       _timestampProvider = timestampProvider ?? DateTime.now;
 
   static const _maxRetainedExports = 6;
   static const _automaticCacheRetention = Duration(hours: 1);
 
   final StorageDirectoryProvider _documentsDirectoryProvider;
   final StorageDirectoryProvider _temporaryDirectoryProvider;
+  final StorageTimestampProvider _timestampProvider;
   Future<void> _storageMutation = Future.value();
+  var _exportSequence = 0;
 
   Future<File> persistImage(File source, {bool deleteTemporarySource = true}) {
     return _serializeMutation(() async {
@@ -128,8 +133,11 @@ class MediaStorageService {
     });
   }
 
-  Future<void> pruneExports() {
-    return _serializeMutation(_pruneExports);
+  Future<void> pruneExports({Iterable<String> protectedPaths = const []}) {
+    final protected = protectedPaths
+        .map((path) => File(path).absolute.path)
+        .toSet();
+    return _serializeMutation(() => _pruneExports(protectedPaths: protected));
   }
 
   Future<void> clearTransientCache() {
@@ -148,7 +156,44 @@ class MediaStorageService {
     return directory;
   }
 
-  Future<void> _pruneExports() async {
+  Future<File> writeExportBytes({
+    required String baseName,
+    required String extension,
+    required List<int> bytes,
+  }) {
+    if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(baseName)) {
+      throw ArgumentError.value(baseName, 'baseName', '导出文件基名不安全');
+    }
+    final lowerCaseExtension = extension.toLowerCase();
+    final normalizedExtension = lowerCaseExtension.startsWith('.')
+        ? lowerCaseExtension.substring(1)
+        : lowerCaseExtension;
+    if (!RegExp(r'^[a-z0-9]+$').hasMatch(normalizedExtension)) {
+      throw ArgumentError.value(extension, 'extension', '导出文件扩展名不安全');
+    }
+    final payload = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+
+    return _serializeMutation(() async {
+      final directory = await exportsDirectory();
+      final timestamp = _timestampProvider().toUtc().microsecondsSinceEpoch;
+      for (var attempt = 0; attempt < 1000; attempt++) {
+        final sequence = _exportSequence++;
+        final file = File(
+          '${directory.path}${Platform.pathSeparator}'
+          '$baseName-$timestamp-$sequence.$normalizedExtension',
+        );
+        if (await file.exists()) {
+          continue;
+        }
+        await _writeBytesAtomically(file, payload);
+        await _pruneExports(protectedPaths: {file.absolute.path});
+        return file;
+      }
+      throw const FileSystemException('无法为导出文件分配唯一名称');
+    });
+  }
+
+  Future<void> _pruneExports({Set<String> protectedPaths = const {}}) async {
     final tempDirectory = await _temporaryDirectoryProvider();
     final tempExports = Directory(
       '${tempDirectory.path}${Platform.pathSeparator}exports',
@@ -165,9 +210,16 @@ class MediaStorageService {
       final filesWithStats = await Future.wait(
         tempFiles.map((file) async => (file: file, stat: await file.stat())),
       );
-      filesWithStats.sort(
-        (left, right) => right.stat.modified.compareTo(left.stat.modified),
-      );
+      filesWithStats.sort((left, right) {
+        final leftProtected = protectedPaths.contains(left.file.absolute.path);
+        final rightProtected = protectedPaths.contains(
+          right.file.absolute.path,
+        );
+        if (leftProtected != rightProtected) {
+          return leftProtected ? -1 : 1;
+        }
+        return right.stat.modified.compareTo(left.stat.modified);
+      });
       for (final entry in filesWithStats.skip(_maxRetainedExports)) {
         await _safeDelete(entry.file);
       }

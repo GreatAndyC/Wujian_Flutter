@@ -54,15 +54,11 @@ class PdfExportService {
       ),
     );
 
-    final outputDirectory = await _mediaStorageService.exportsDirectory();
-    final fileName =
-        'wujian-${grouping.name}-${generatedAt.millisecondsSinceEpoch}.pdf';
-    final file = File(
-      '${outputDirectory.path}${Platform.pathSeparator}$fileName',
+    return _mediaStorageService.writeExportBytes(
+      baseName: 'wujian-${grouping.name}',
+      extension: 'pdf',
+      bytes: await document.save(),
     );
-    await file.writeAsBytes(await document.save());
-    await _mediaStorageService.pruneExports();
-    return file;
   }
 
   pw.Widget _buildCover(

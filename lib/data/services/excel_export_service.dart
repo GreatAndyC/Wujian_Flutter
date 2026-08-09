@@ -71,13 +71,11 @@ class ExcelExportService {
       throw const FileSystemException('Excel 导出失败');
     }
 
-    final directory = await _mediaStorageService.exportsDirectory();
-    final file = File(
-      '${directory.path}${Platform.pathSeparator}wujian-${grouping.name}-${DateTime.now().millisecondsSinceEpoch}.xlsx',
+    return _mediaStorageService.writeExportBytes(
+      baseName: 'wujian-${grouping.name}',
+      extension: 'xlsx',
+      bytes: bytes,
     );
-    await file.writeAsBytes(bytes, flush: true);
-    await _mediaStorageService.pruneExports();
-    return file;
   }
 
   List<CellValue> _rowForItem(ItemRecord item) {
