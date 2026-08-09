@@ -286,9 +286,11 @@ class AppController extends ChangeNotifier {
         return true;
       });
       if (!queued) {
+        await _mediaStorageService.deleteTransientSource(photo);
         notifyListeners();
         return false;
       }
+      await _mediaStorageService.deleteTransientSource(photo);
       _message = '已加入后台识别队列';
       notifyListeners();
       unawaited(_processPendingQueue());
@@ -472,14 +474,16 @@ class AppController extends ChangeNotifier {
 
   Future<void> optimizeStorage({bool silent = false}) async {
     await _runBusy(() async {
-      await _migrateLegacyImages();
+      final migrationFailures = await _migrateLegacyImages();
       await _mutateCatalog(() async {
         await _mediaStorageService.optimizeStorage(
           referencedImagePaths: _allReferencedImagePaths(),
         );
         await _refreshStorageUsage();
         if (!silent) {
-          _message = '已完成存储优化';
+          _message = migrationFailures == 0
+              ? '已完成存储优化'
+              : '已完成清理，$migrationFailures 张旧图片迁移失败并保留了原文件';
         }
       });
     }, keepBusyState: silent);
@@ -509,7 +513,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<ItemRecord> _createQueuedDraft(File photo, {String? box}) async {
-    final imageFile = await _persistImage(photo);
+    final imageFile = await _persistImage(photo, deleteTemporarySource: false);
     _latestImage = imageFile;
     await _refreshStorageUsage();
     notifyListeners();
@@ -729,51 +733,70 @@ class AppController extends ChangeNotifier {
     }).toList();
   }
 
-  Future<File> _persistImage(File source) async {
-    return _mediaStorageService.persistImage(source);
+  Future<File> _persistImage(
+    File source, {
+    bool deleteTemporarySource = true,
+  }) async {
+    return _mediaStorageService.persistImage(
+      source,
+      deleteTemporarySource: deleteTemporarySource,
+    );
   }
 
-  Future<void> _migrateLegacyImages() async {
+  Future<int> _migrateLegacyImages() async {
     final legacyPaths = _allReferencedImagePaths()
         .where((path) => !_isContentAddressedImage(path))
         .toSet()
         .toList();
+    var failures = 0;
     for (final legacyPath in legacyPaths) {
       final source = File(legacyPath);
       if (!await source.exists()) {
         continue;
       }
-      await _mutateCatalog(() async {
-        if (!_allReferencedImagePaths().contains(legacyPath)) {
-          return;
+      File? normalized;
+      try {
+        await _mutateCatalog(() async {
+          if (!_allReferencedImagePaths().contains(legacyPath)) {
+            return;
+          }
+          normalized = await _persistImage(
+            source,
+            deleteTemporarySource: false,
+          );
+          _items = _items
+              .map(
+                (item) => item.imagePath == legacyPath
+                    ? item.copyWith(imagePath: normalized!.path)
+                    : item,
+              )
+              .toList();
+          _pendingQueue = _pendingQueue
+              .map(
+                (item) => item.imagePath == legacyPath
+                    ? item.copyWith(imagePath: normalized!.path)
+                    : item,
+              )
+              .toList();
+          await _saveCatalog();
+        });
+        if (normalized != null) {
+          if (_latestImage?.path == legacyPath) {
+            _latestImage = normalized;
+          }
+          await _mediaStorageService.deleteTransientSource(source);
         }
-        final normalized = await _persistImage(source);
-        _items = _items
-            .map(
-              (item) => item.imagePath == legacyPath
-                  ? item.copyWith(imagePath: normalized.path)
-                  : item,
-            )
-            .toList();
-        _pendingQueue = _pendingQueue
-            .map(
-              (item) => item.imagePath == legacyPath
-                  ? item.copyWith(imagePath: normalized.path)
-                  : item,
-            )
-            .toList();
-        if (_latestImage?.path == legacyPath) {
-          _latestImage = normalized;
-        }
-        await _saveCatalog();
-      });
+      } catch (_) {
+        failures++;
+      }
     }
+    return failures;
   }
 
   bool _isContentAddressedImage(String path) {
     final normalized = path.replaceAll('\\', '/');
     final fileName = normalized.substring(normalized.lastIndexOf('/') + 1);
-    return RegExp(r'^[0-9a-f]{64}\.jpg$').hasMatch(fileName);
+    return RegExp(r'^v2-[0-9a-f]{64}\.jpg$').hasMatch(fileName);
   }
 
   Future<void> _refreshStorageUsage() async {

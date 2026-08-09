@@ -18,10 +18,38 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# Local IDE and agent configuration can contain machine paths, endpoints, or
+# credentials. Commit sanitized examples with an `.example` suffix instead.
+.vscode/
+.cursor/
+.mcp/
+.mcp.json
+.codex/
+.claude/settings.local.json
+
+# Local secrets and service configuration. Safe templates remain trackable as
+# `.env.example`, `.env.<name>.example`, or files ending in `.example`.
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.template
+!.env.*.template
+.envrc
+.direnv/
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+**/key.properties
+**/google-services.json
+**/GoogleService-Info.plist
+**/Secrets.xcconfig
+**/firebase-adminsdk*.json
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -32,6 +60,19 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+.cache/
+**/.cache/
+/tmp/
+/temp/
+
+# Local downloads, browser state, and generated export artifacts.
+/downloads/
+/exports/
+/.auth/
+/.browser/
+/.chrome/
+**/playwright/.auth/
+**/storage-state*.json
 
 # Local release assets prepared for manual GitHub Release uploads.
 /release/

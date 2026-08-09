@@ -100,6 +100,68 @@ void main() {
     expect(controller.pendingQueue, hasLength(1));
     final images = Directory('${documents.path}/images').listSync();
     expect(images.whereType<File>(), hasLength(1));
+    expect(await first.exists(), isFalse);
+    expect(await second.exists(), isFalse);
+  });
+
+  test('连续拍摄同一箱子时图片全部落盘且箱号不丢失', () async {
+    final catalog = _MemoryCatalogRepository(const CatalogSnapshot.empty());
+    final controller = _controller(
+      catalog: catalog,
+      mediaStorage: mediaStorage,
+      recognition: _ImmediateRecognitionRepository(),
+    );
+    await controller.initialize();
+
+    final sources = <File>[];
+    for (var index = 0; index < 10; index++) {
+      final source = File('${temporary.path}/box-burst-$index.jpg');
+      await source.writeAsBytes(
+        _jpeg(
+          width: 480 + index,
+          height: 320,
+          red: 20 + index * 20,
+          green: 80 + index * 10,
+          blue: 40 + index * 12,
+        ),
+      );
+      sources.add(source);
+    }
+
+    final results = await Future.wait(
+      sources.map(
+        (source) => controller.queueCapturedFile(source, box: '客厅-纸箱-01'),
+      ),
+    );
+    await _waitUntil(
+      () =>
+          !controller.isProcessingQueue &&
+          controller.pendingQueue.length == sources.length &&
+          controller.pendingQueue.every(
+            (item) => item.queueState == QueueRecognitionState.ready,
+          ),
+    );
+
+    expect(results.every((result) => result), isTrue);
+    expect(controller.pendingQueue, hasLength(10));
+    expect(
+      controller.pendingQueue.every((item) => item.box == '客厅-纸箱-01'),
+      isTrue,
+    );
+    final usage = await mediaStorage.computeUsage();
+    expect(usage.imageCount, 10);
+    expect(usage.imageBytes, greaterThan(0));
+    expect(usage.captureCacheCount, 0);
+    expect(sources.every((source) => !source.existsSync()), isTrue);
+
+    // ignore: avoid_print
+    print(
+      '[storage-metrics] continuous-capture '
+      'images=${usage.imageCount} '
+      'permanentBytes=${usage.imageBytes} '
+      'cacheCount=${usage.captureCacheCount} '
+      'cacheBytes=${usage.captureCacheBytes}',
+    );
   });
 
   test('目录保存失败时内存状态回滚且导入返回失败', () async {
@@ -118,6 +180,7 @@ void main() {
 
     expect(succeeded, isFalse);
     expect(controller.pendingQueue, isEmpty);
+    expect(await source.exists(), isTrue);
     expect(
       Directory('${documents.path}/images').listSync().whereType<File>(),
       isEmpty,
@@ -148,11 +211,12 @@ void main() {
   test('启动优化会压缩并合并旧版本永久图片', () async {
     final legacyImages = Directory('${documents.path}/images');
     await legacyImages.create(recursive: true);
-    final firstLegacy = File('${legacyImages.path}/1001.jpg');
-    final secondLegacy = File('${legacyImages.path}/1002.jpg');
+    final firstLegacy = File('${legacyImages.path}/${'a' * 64}.jpg');
+    final secondLegacy = File('${legacyImages.path}/${'b' * 64}.jpg');
     final bytes = _jpeg(width: 3000, height: 1200);
     await firstLegacy.writeAsBytes(bytes);
     await secondLegacy.writeAsBytes(bytes);
+    final before = await mediaStorage.computeUsage();
     final catalog = _MemoryCatalogRepository(
       CatalogSnapshot(
         items: [
@@ -180,10 +244,12 @@ void main() {
     await _waitUntil(
       () =>
           controller.items.every(
-            (item) => RegExp(r'/[0-9a-f]{64}\.jpg$').hasMatch(item.imagePath),
+            (item) =>
+                RegExp(r'/v2-[0-9a-f]{64}\.jpg$').hasMatch(item.imagePath),
           ) &&
           !controller.isBusy,
     );
+    final after = await mediaStorage.computeUsage();
 
     expect(
       controller.items.map((item) => item.imagePath).toSet(),
@@ -195,6 +261,124 @@ void main() {
       Directory('${documents.path}/images').listSync().whereType<File>(),
       hasLength(1),
     );
+    expect(before.imageCount, 2);
+    expect(after.imageCount, 1);
+    expect(after.imageBytes, lessThan(before.imageBytes));
+    expect(after.captureCacheCount, 0);
+    // ignore: avoid_print
+    print(
+      '[storage-metrics] migration '
+      'beforeImages=${before.imageCount} '
+      'beforePermanentBytes=${before.imageBytes} '
+      'afterImages=${after.imageCount} '
+      'afterPermanentBytes=${after.imageBytes} '
+      'deltaPermanentBytes=${after.imageBytes - before.imageBytes}',
+    );
+  });
+
+  test('旧版临时图迁移保存失败时保留源图，重试成功且幂等', () async {
+    final legacy = File('${temporary.path}/legacy-retry.jpg');
+    await legacy.writeAsBytes(_jpeg(width: 960, height: 640));
+    final originalBytes = await legacy.readAsBytes();
+    final catalog = _MemoryCatalogRepository(
+      CatalogSnapshot(
+        items: [
+          _item(
+            id: 'legacy-retry',
+            imagePath: legacy.path,
+            queueState: QueueRecognitionState.ready,
+          ),
+        ],
+        pendingItems: const [],
+      ),
+    )..failNextSave = true;
+    final controller = _controller(
+      catalog: catalog,
+      mediaStorage: mediaStorage,
+      recognition: _ImmediateRecognitionRepository(),
+    );
+
+    await controller.initialize();
+    await _waitUntil(() => !controller.isBusy);
+
+    expect(await legacy.exists(), isTrue);
+    expect(await legacy.readAsBytes(), originalBytes);
+    expect(controller.items.single.imagePath, legacy.path);
+    expect(
+      Directory('${documents.path}/images').listSync().whereType<File>(),
+      isEmpty,
+    );
+
+    await controller.optimizeStorage();
+    final migratedPath = controller.items.single.imagePath;
+    final afterRetry = await mediaStorage.computeUsage();
+    expect(migratedPath, isNot(legacy.path));
+    expect(await legacy.exists(), isFalse);
+    expect(afterRetry.imageCount, 1);
+    expect(afterRetry.captureCacheCount, 0);
+
+    await controller.optimizeStorage();
+    final afterSecondPass = await mediaStorage.computeUsage();
+    expect(controller.items.single.imagePath, migratedPath);
+    expect(afterSecondPass.imageCount, afterRetry.imageCount);
+    expect(afterSecondPass.imageBytes, afterRetry.imageBytes);
+  });
+
+  test('损坏旧图不阻断其他迁移且原文件与引用均保留', () async {
+    final legacyImages = Directory('${documents.path}/images');
+    await legacyImages.create(recursive: true);
+    final broken = File('${legacyImages.path}/broken-legacy.jpg');
+    final valid = File('${legacyImages.path}/valid-legacy.jpg');
+    const brokenBytes = [1, 2, 3, 4, 5];
+    await broken.writeAsBytes(brokenBytes);
+    await valid.writeAsBytes(_jpeg(width: 1280, height: 720));
+    final catalog = _MemoryCatalogRepository(
+      CatalogSnapshot(
+        items: [
+          _item(
+            id: 'broken-legacy',
+            imagePath: broken.path,
+            queueState: QueueRecognitionState.ready,
+          ),
+          _item(
+            id: 'valid-legacy',
+            imagePath: valid.path,
+            queueState: QueueRecognitionState.ready,
+          ),
+        ],
+        pendingItems: const [],
+      ),
+    );
+    final controller = _controller(
+      catalog: catalog,
+      mediaStorage: mediaStorage,
+      recognition: _ImmediateRecognitionRepository(),
+    );
+
+    await controller.initialize();
+    await _waitUntil(() => !controller.isBusy);
+
+    final brokenRecord = controller.items.singleWhere(
+      (item) => item.id == 'broken-legacy',
+    );
+    final validRecord = controller.items.singleWhere(
+      (item) => item.id == 'valid-legacy',
+    );
+    expect(brokenRecord.imagePath, broken.path);
+    expect(await broken.readAsBytes(), brokenBytes);
+    expect(validRecord.imagePath, isNot(valid.path));
+    expect(await valid.exists(), isFalse);
+    expect((await mediaStorage.computeUsage()).imageCount, 2);
+
+    final migratedPath = validRecord.imagePath;
+    await controller.optimizeStorage();
+    expect(
+      controller.items
+          .singleWhere((item) => item.id == 'valid-legacy')
+          .imagePath,
+      migratedPath,
+    );
+    expect(await broken.readAsBytes(), brokenBytes);
   });
 
   test('火山识别并发上限为四个且队列最终全部完成', () async {
@@ -282,9 +466,15 @@ ItemRecord _item({
   );
 }
 
-List<int> _jpeg({int width = 640, int height = 480}) {
+List<int> _jpeg({
+  int width = 640,
+  int height = 480,
+  int red = 80,
+  int green = 160,
+  int blue = 100,
+}) {
   final image = img.Image(width: width, height: height);
-  img.fill(image, color: img.ColorRgb8(80, 160, 100));
+  img.fill(image, color: img.ColorRgb8(red, green, blue));
   return img.encodeJpg(image);
 }
 
