@@ -42,6 +42,9 @@ class _CameraCapturePageState extends State<CameraCapturePage>
   File? _lastCapturedPreview;
   bool _thumbnailDocked = true;
   Timer? _focusIndicatorTimer;
+  AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
+  int _cameraOperationGeneration = 0;
+  bool _cameraOpenInFlight = false;
 
   @override
   void initState() {
@@ -52,25 +55,44 @@ class _CameraCapturePageState extends State<CameraCapturePage>
 
   @override
   void dispose() {
+    _cameraOperationGeneration++;
+    final controller = _cameraController;
+    _cameraController = null;
+    if (controller != null) {
+      unawaited(controller.dispose());
+    }
     _focusIndicatorTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    _cameraController?.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) {
+    _lifecycleState = state;
+    if (state != AppLifecycleState.resumed) {
+      _cameraOperationGeneration++;
+      _cameraOpenInFlight = false;
+      final controller = _cameraController;
+      _cameraController = null;
+      if (controller != null) {
+        unawaited(controller.dispose());
+      }
+      if (mounted) {
+        setState(() => _isInitializing = true);
+      }
       return;
     }
 
-    if (state == AppLifecycleState.inactive) {
-      controller.dispose();
-      _cameraController = null;
-    } else if (state == AppLifecycleState.resumed) {
-      _openCamera(_cameraIndex);
+    if (_cameras.isEmpty || _cameraController != null || _cameraOpenInFlight) {
+      return;
     }
+    if (mounted) {
+      setState(() {
+        _isInitializing = true;
+        _error = null;
+      });
+    }
+    unawaited(_openCamera(_cameraIndex));
   }
 
   List<CameraLensDirection> get _directions {
@@ -93,6 +115,24 @@ class _CameraCapturePageState extends State<CameraCapturePage>
         child: Stack(
           children: [
             Positioned.fill(child: _buildPreview(controller)),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.18),
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.68),
+                      ],
+                      stops: const [0, 0.45, 1],
+                    ),
+                  ),
+                ),
+              ),
+            ),
             if (_focusIndicatorPosition != null)
               Positioned(
                 left: _focusIndicatorPosition!.dx - 28,
@@ -108,9 +148,9 @@ class _CameraCapturePageState extends State<CameraCapturePage>
             Positioned(
               left: 12,
               top: 12,
-              child: IconButton.filledTonal(
+              child: _CameraIconButton(
                 onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close),
+                icon: Icons.close,
                 tooltip: '退出拍摄',
               ),
             ),
@@ -120,24 +160,22 @@ class _CameraCapturePageState extends State<CameraCapturePage>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton.filledTonal(
+                  _CameraIconButton(
                     onPressed:
                         controller == null ||
                             !controller.value.isInitialized ||
                             _isCapturing
                         ? null
                         : _toggleTorch,
-                    icon: Icon(
-                      _isTorchEnabled ? Icons.flash_on : Icons.flash_off,
-                    ),
+                    icon: _isTorchEnabled ? Icons.flash_on : Icons.flash_off,
                     tooltip: _isTorchEnabled ? '关闭常亮闪光灯' : '打开常亮闪光灯',
                   ),
                   const SizedBox(width: 8),
-                  IconButton.filledTonal(
+                  _CameraIconButton(
                     onPressed: !canSwitchDirection || _isCapturing
                         ? null
                         : _switchDirection,
-                    icon: const Icon(Icons.cameraswitch_outlined),
+                    icon: Icons.cameraswitch_outlined,
                     tooltip: '切换前后摄像头',
                   ),
                 ],
@@ -296,7 +334,9 @@ class _CameraCapturePageState extends State<CameraCapturePage>
       _teleBackCameraIndex = _resolveTeleBackCameraIndex();
       _logCameraMapping();
       _cameraIndex = _cameras.indexOf(preferred);
-      await _openCamera(_cameraIndex);
+      if (_lifecycleState == AppLifecycleState.resumed) {
+        await _openCamera(_cameraIndex);
+      }
     } on CameraException catch (error) {
       if (!mounted) {
         return;
@@ -309,7 +349,21 @@ class _CameraCapturePageState extends State<CameraCapturePage>
   }
 
   Future<void> _openCamera(int index) async {
-    await _cameraController?.dispose();
+    if (index < 0 || index >= _cameras.length || _cameraOpenInFlight) {
+      return;
+    }
+    _cameraOpenInFlight = true;
+    final generation = ++_cameraOperationGeneration;
+    final previousController = _cameraController;
+    _cameraController = null;
+    await previousController?.dispose();
+    if (!_isCurrentCameraOperation(generation)) {
+      if (generation == _cameraOperationGeneration) {
+        _cameraOpenInFlight = false;
+      }
+      return;
+    }
+
     final camera = _cameras[index];
     final controller = CameraController(
       camera,
@@ -329,7 +383,7 @@ class _CameraCapturePageState extends State<CameraCapturePage>
         enableTorch ? FlashMode.torch : FlashMode.off,
       );
       await controller.setZoomLevel(defaultZoom);
-      if (!mounted) {
+      if (!_isCurrentCameraOperation(generation)) {
         await controller.dispose();
         return;
       }
@@ -343,17 +397,30 @@ class _CameraCapturePageState extends State<CameraCapturePage>
       });
     } on CameraException catch (error) {
       await controller.dispose();
-      if (!mounted) {
+      if (!_isCurrentCameraOperation(generation)) {
         return;
       }
       setState(() {
         _error = error.description ?? error.code;
         _isInitializing = false;
       });
+    } finally {
+      if (generation == _cameraOperationGeneration) {
+        _cameraOpenInFlight = false;
+      }
     }
   }
 
+  bool _isCurrentCameraOperation(int generation) {
+    return mounted &&
+        generation == _cameraOperationGeneration &&
+        _lifecycleState == AppLifecycleState.resumed;
+  }
+
   Future<void> _switchDirection() async {
+    if (_isCapturing || _isInitializing) {
+      return;
+    }
     final currentDirection = _cameras[_cameraIndex].lensDirection;
     final directions = _directions;
     final currentIndex = directions.indexOf(currentDirection);
@@ -368,6 +435,9 @@ class _CameraCapturePageState extends State<CameraCapturePage>
   }
 
   Future<void> _selectCamera(CameraDescription camera) async {
+    if (_isInitializing) {
+      return;
+    }
     final nextIndex = _cameras.indexOf(camera);
     if (nextIndex == _cameraIndex) {
       return;
@@ -377,7 +447,7 @@ class _CameraCapturePageState extends State<CameraCapturePage>
   }
 
   Future<void> _setZoomLevel(double zoomLevel) async {
-    if (_isCapturing) {
+    if (_isCapturing || _isInitializing) {
       return;
     }
 
@@ -823,6 +893,37 @@ class _InfoBadge extends StatelessWidget {
   }
 }
 
+class _CameraIconButton extends StatelessWidget {
+  const _CameraIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        icon: Icon(icon, color: Colors.white),
+        style: IconButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          backgroundColor: Colors.black.withValues(alpha: 0.52),
+          disabledBackgroundColor: Colors.black.withValues(alpha: 0.24),
+          foregroundColor: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
 class _ZoomSelector extends StatelessWidget {
   const _ZoomSelector({
     required this.zoomLevels,
@@ -877,19 +978,24 @@ class _LensButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected ? Colors.white : Colors.white.withValues(alpha: 0.16),
-      shape: const StadiumBorder(),
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const StadiumBorder(),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? Colors.black : Colors.white,
-              fontWeight: FontWeight.w700,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '切换焦段 $label',
+      child: Material(
+        color: selected ? Colors.white : Colors.white.withValues(alpha: 0.16),
+        shape: const StadiumBorder(),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const StadiumBorder(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.black : Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
@@ -906,25 +1012,30 @@ class _CaptureButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 76,
-      height: 76,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          shape: const CircleBorder(),
-          padding: EdgeInsets.zero,
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
-          disabledBackgroundColor: Colors.white70,
+    return Semantics(
+      button: true,
+      label: isCapturing ? '正在保存照片' : '拍照',
+      enabled: onPressed != null,
+      child: SizedBox(
+        width: 80,
+        height: 80,
+        child: FilledButton(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            shape: const CircleBorder(),
+            padding: EdgeInsets.zero,
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+            disabledBackgroundColor: Colors.white70,
+          ),
+          child: isCapturing
+              ? const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                )
+              : const Icon(Icons.camera_alt, size: 34),
         ),
-        child: isCapturing
-            ? const SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(strokeWidth: 3),
-              )
-            : const Icon(Icons.camera_alt, size: 34),
       ),
     );
   }
@@ -953,25 +1064,28 @@ class _CaptureThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.white, width: 2),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x66000000),
-            blurRadius: 14,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: LocalImageFrame(
-        path: image.path,
-        width: double.infinity,
-        height: double.infinity,
-        borderRadius: BorderRadius.circular(16),
-        backgroundColor: Colors.black,
-        padding: const EdgeInsets.all(6),
+    return Semantics(
+      image: true,
+      label: '最近拍摄的照片',
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.white, width: 2),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x66000000),
+              blurRadius: 14,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: LocalImageFrame(
+          path: image.path,
+          borderRadius: BorderRadius.circular(16),
+          backgroundColor: Colors.black,
+          padding: const EdgeInsets.all(6),
+          semanticLabel: '最近拍摄的照片',
+        ),
       ),
     );
   }

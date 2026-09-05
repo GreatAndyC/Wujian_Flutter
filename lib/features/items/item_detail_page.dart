@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_theme.dart';
 import '../../domain/entities/item_record.dart';
+import '../../shared/widgets/app_ui.dart';
 import '../../shared/widgets/local_image_frame.dart';
 import '../shell/app_scope.dart';
 import 'item_editor_sheet.dart';
@@ -44,7 +46,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_item.name),
+        title: const Text('物品详情'),
         actions: [
           IconButton(
             onPressed: _editItem,
@@ -55,79 +57,101 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       ),
       body: SafeArea(
         top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
-          children: [
-            if (imageExists)
-              LocalImageFrame(
-                path: _item.imagePath,
-                height: 240,
-                borderRadius: BorderRadius.circular(28),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => LocalImageViewerPage(
-                      path: _item.imagePath,
-                      title: _item.name,
+        child: AppContent(
+          maxWidth: 760,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              AppSpacing.xl,
+            ),
+            children: [
+              AppPageHeader(
+                eyebrow: _item.category.trim().isEmpty ? '物品' : _item.category,
+                title: _item.name,
+                subtitle: _item.description.trim().isEmpty
+                    ? '已保存的物品记录'
+                    : _item.description,
+                trailing: AppStatusPill(
+                  label: _item.status.label,
+                  icon: Icons.bolt_outlined,
+                  tone: _item.status == ItemStatus.cataloged
+                      ? AppStatusTone.success
+                      : AppStatusTone.neutral,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              if (imageExists)
+                LocalImageFrame(
+                  path: _item.imagePath,
+                  height: 260,
+                  width: double.infinity,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                  semanticLabel: '${_item.name}照片',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => LocalImageViewerPage(
+                        path: _item.imagePath,
+                        title: _item.name,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            const SizedBox(height: 20),
-            Text(_item.name, style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text(
-              _item.description,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 18),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
+              if (imageExists) const SizedBox(height: AppSpacing.lg),
+              AppSurface(
+                padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: parameters.entries
-                      .map(
-                        (entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: 72,
-                                child: Text(
-                                  entry.key,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
+                  children: [
+                    Text('信息', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: AppSpacing.sm),
+                    for (final entry in parameters.entries)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 7),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 72,
+                              child: Text(
+                                entry.key,
+                                style: Theme.of(context).textTheme.labelLarge,
                               ),
-                              Expanded(
-                                child: Text(
-                                  entry.value,
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                entry.value,
+                                style: Theme.of(context).textTheme.bodyMedium,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      )
-                      .toList(),
+                      ),
+                  ],
                 ),
               ),
-            ),
-            if (_item.notes.trim().isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Text(
-                    _item.notes,
-                    style: Theme.of(context).textTheme.bodyLarge,
+              if (_item.notes.trim().isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.md),
+                AppSurface(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '备注',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        _item.notes,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                    ],
                   ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

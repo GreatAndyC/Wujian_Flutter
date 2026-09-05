@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_theme.dart';
 import '../../domain/entities/item_record.dart';
+import '../../shared/widgets/app_ui.dart';
 import '../../shared/widgets/local_image_frame.dart';
 
 class ItemEditorSheet extends StatefulWidget {
@@ -74,14 +76,21 @@ class _ItemEditorSheetState extends State<ItemEditorSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFFF5F1E8),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppTheme.radiusXl),
+        ),
       ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, bottomInset + 20),
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.md,
+            AppSpacing.md,
+            bottomInset + AppSpacing.lg,
+          ),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,7 +100,9 @@ class _ItemEditorSheetState extends State<ItemEditorSheet> {
                     width: 48,
                     height: 5,
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.14),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(99),
                     ),
                   ),
@@ -101,82 +112,51 @@ class _ItemEditorSheetState extends State<ItemEditorSheet> {
                   widget.title,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   '保存前可以修正分类、房间、箱号和参数。',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: AppSpacing.lg),
                 _PreviewImage(path: widget.initialItem.imagePath),
                 const SizedBox(height: 18),
                 _Field(label: '名称', controller: _nameController),
                 _Field(label: '分类', controller: _categoryController),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _Field(label: '房间', controller: _roomController),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _Field(label: '箱号', controller: _boxController),
-                    ),
-                  ],
+                _FieldPair(
+                  first: _Field(label: '房间', controller: _roomController),
+                  second: _Field(label: '箱号', controller: _boxController),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _Field(
-                        label: '数量',
-                        controller: _quantityController,
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<ItemStatus>(
-                        initialValue: _status,
-                        decoration: const InputDecoration(labelText: '状态'),
-                        items: ItemStatus.values
-                            .map(
-                              (status) => DropdownMenuItem(
-                                value: status,
-                                child: Text(status.label),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() => _status = value);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
+                _FieldPair(
+                  first: _Field(
+                    label: '数量',
+                    controller: _quantityController,
+                    keyboardType: TextInputType.number,
+                  ),
+                  second: DropdownButtonFormField<ItemStatus>(
+                    initialValue: _status,
+                    decoration: const InputDecoration(labelText: '状态'),
+                    items: ItemStatus.values
+                        .map(
+                          (status) => DropdownMenuItem(
+                            value: status,
+                            child: Text(status.label),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _status = value);
+                      }
+                    },
+                  ),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _Field(label: '品牌', controller: _brandController),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _Field(label: '型号', controller: _modelController),
-                    ),
-                  ],
+                _FieldPair(
+                  first: _Field(label: '品牌', controller: _brandController),
+                  second: _Field(label: '型号', controller: _modelController),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _Field(label: '颜色', controller: _colorController),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _Field(
-                        label: '材质',
-                        controller: _materialController,
-                      ),
-                    ),
-                  ],
+                _FieldPair(
+                  first: _Field(label: '颜色', controller: _colorController),
+                  second: _Field(label: '材质', controller: _materialController),
                 ),
                 _Field(
                   label: '详情',
@@ -184,7 +164,7 @@ class _ItemEditorSheetState extends State<ItemEditorSheet> {
                   maxLines: 3,
                 ),
                 _Field(label: '备注', controller: _notesController, maxLines: 3),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.md),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -243,7 +223,34 @@ class _PreviewImage extends StatelessWidget {
         height: 150,
         width: double.infinity,
         borderRadius: BorderRadius.circular(20),
+        semanticLabel: '待编辑物品照片',
       ),
+    );
+  }
+}
+
+class _FieldPair extends StatelessWidget {
+  const _FieldPair({required this.first, required this.second});
+
+  final Widget first;
+  final Widget second;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 480) {
+          return Column(children: [first, second]);
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: second),
+          ],
+        );
+      },
     );
   }
 }

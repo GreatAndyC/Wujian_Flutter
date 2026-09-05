@@ -278,21 +278,18 @@ class PdfExportService {
     }
   }
 
-  Uint8List _buildPdfPreviewBytes(Uint8List sourceBytes) {
+  Uint8List? _buildPdfPreviewBytes(Uint8List sourceBytes) {
     try {
       final decoded = img.decodeImage(sourceBytes);
       if (decoded == null) {
-        return sourceBytes;
+        return null;
       }
       final resized = _resizePreviewIfNeeded(decoded);
-      if (identical(resized, decoded)) {
-        return sourceBytes;
-      }
       return Uint8List.fromList(
         img.encodeJpg(resized, quality: _previewJpegQuality),
       );
     } catch (_) {
-      return sourceBytes;
+      return null;
     }
   }
 

@@ -45,6 +45,8 @@ class WujianApp extends StatelessWidget {
         title: '物见',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme(),
+        darkTheme: AppTheme.darkTheme(),
+        themeMode: ThemeMode.system,
         home: const MainShell(),
       ),
     );

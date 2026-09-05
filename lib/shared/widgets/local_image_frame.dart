@@ -12,6 +12,7 @@ class LocalImageFrame extends StatelessWidget {
     this.backgroundColor = const Color(0xFF171717),
     this.padding = const EdgeInsets.all(8),
     this.onTap,
+    this.semanticLabel,
   });
 
   final String path;
@@ -21,6 +22,7 @@ class LocalImageFrame extends StatelessWidget {
   final Color backgroundColor;
   final EdgeInsets padding;
   final VoidCallback? onTap;
+  final String? semanticLabel;
 
   static bool exists(String path) {
     return path.trim().isNotEmpty && File(path).existsSync();
@@ -28,40 +30,73 @@ class LocalImageFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
-    final cacheWidth = width == null
-        ? null
-        : (width! * devicePixelRatio).round().clamp(1, 4096).toInt();
-    final cacheHeight = height == null
-        ? null
-        : (height! * devicePixelRatio).round().clamp(1, 4096).toInt();
-    final content = Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: borderRadius,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: padding,
-        child: Image.file(
-          File(path),
-          fit: BoxFit.contain,
-          cacheWidth: cacheWidth,
-          cacheHeight: cacheHeight,
-          errorBuilder: (context, error, stackTrace) {
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+        final cacheWidth = _cacheDimension(
+          requested: width,
+          available: constraints.maxWidth,
+          devicePixelRatio: devicePixelRatio,
+        );
+        final cacheHeight = _cacheDimension(
+          requested: height,
+          available: constraints.maxHeight,
+          devicePixelRatio: devicePixelRatio,
+        );
+        final content = Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: borderRadius,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: padding,
+            child: Image.file(
+              File(path),
+              fit: BoxFit.contain,
+              cacheWidth: cacheWidth,
+              cacheHeight: cacheHeight,
+              errorBuilder: (context, error, stackTrace) {
+                return const Center(
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.white54,
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+
+        final interactiveContent = onTap == null
+            ? content
+            : InkWell(onTap: onTap, borderRadius: borderRadius, child: content);
+        return Semantics(
+          image: true,
+          label: semanticLabel,
+          button: onTap != null,
+          child: interactiveContent,
+        );
+      },
     );
+  }
 
-    if (onTap == null) {
-      return content;
+  int? _cacheDimension({
+    required double? requested,
+    required double available,
+    required double devicePixelRatio,
+  }) {
+    final logicalDimension = requested?.isFinite == true
+        ? requested!
+        : available.isFinite
+        ? available
+        : null;
+    if (logicalDimension == null || !logicalDimension.isFinite) {
+      return null;
     }
-
-    return InkWell(onTap: onTap, borderRadius: borderRadius, child: content);
+    return (logicalDimension * devicePixelRatio).round().clamp(1, 4096).toInt();
   }
 }
 
@@ -90,6 +125,7 @@ class LocalImageViewerPage extends StatelessWidget {
               borderRadius: BorderRadius.circular(0),
               backgroundColor: Colors.black,
               padding: const EdgeInsets.all(16),
+              semanticLabel: title ?? '本地图片',
             ),
           ),
         ),

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../app/theme/app_theme.dart';
 import '../../domain/entities/item_record.dart';
+import '../../shared/widgets/app_ui.dart';
 import '../../shared/widgets/local_image_frame.dart';
 import '../camera/camera_capture_page.dart';
 import '../items/item_detail_page.dart';
@@ -39,210 +40,256 @@ class HomePage extends StatelessWidget {
             .where((item) => item.queueState == QueueRecognitionState.failed)
             .length;
 
+        final isConfigured = controller.settings.isConfigured;
         return CustomScrollView(
           key: const ValueKey('home-page'),
           slivers: [
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(32),
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF14342D), Color(0xFF255748)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+              child: AppContent(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AppPageHeader(
+                        eyebrow: '物见工作区',
+                        title: '把家里的东西，变得好找。',
+                        subtitle:
+                            '${controller.activeProfile.name} · ${controller.items.length} 件已入库',
+                        trailing: AppStatusPill(
+                          label: isConfigured ? '识别已连接' : '待配置 API',
+                          icon: isConfigured
+                              ? Icons.cloud_done_outlined
+                              : Icons.cloud_off_outlined,
+                          tone: isConfigured
+                              ? AppStatusTone.success
+                              : AppStatusTone.warning,
                         ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                            child: Text(
-                              '物见 · ${controller.activeProfile.name}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          Text(
-                            '先拍下来，\n后台自动识别。',
-                            style: Theme.of(context).textTheme.displaySmall
-                                ?.copyWith(color: Colors.white),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            controller.settings.isConfigured
-                                ? '连续拍照时，照片会立即进入队列，后台继续识别，不阻塞下一张。'
-                                : '还没配置 API。你仍然可以拍照，结果会先进队列，之后手动补充。',
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.86),
-                                ),
-                          ),
-                          const SizedBox(height: 26),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: FilledButton.icon(
-                                  onPressed: controller.isBusy
-                                      ? null
-                                      : () => _openCamera(context),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: AppTheme.ink,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
+                      const SizedBox(height: AppSpacing.lg),
+                      AppSurface(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        color: Theme.of(context).colorScheme.primary,
+                        borderColor: Colors.transparent,
+                        radius: AppTheme.radiusXl,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '拍下来，剩下的交给队列。',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onPrimary,
+                                        ),
                                   ),
-                                  icon: const Icon(Icons.camera_alt),
-                                  label: const Text('拍一张'),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: controller.isBusy
-                                      ? null
-                                      : () => _startContinuousCapture(context),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.white,
-                                    side: BorderSide(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.36,
+                                Icon(
+                                  Icons.auto_awesome,
+                                  color: Theme.of(context).colorScheme.onPrimary
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              isConfigured
+                                  ? '照片会先保存到本地，再异步识别；你可以继续拍，不会被网络卡住。'
+                                  : '还没配置 API 也没关系，照片会安全留在待确认队列里。',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimary
+                                        .withValues(alpha: 0.82),
+                                  ),
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final actions = [
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      key: const ValueKey(
+                                        'home-capture-button',
                                       ),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
+                                      onPressed: controller.isBusy
+                                          ? null
+                                          : () => _openCamera(context),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.onPrimary,
+                                        foregroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.camera_alt_outlined,
+                                      ),
+                                      label: const Text('拍一张'),
                                     ),
                                   ),
-                                  icon: const Icon(Icons.photo_camera_back),
-                                  label: const Text('建箱后连拍'),
-                                ),
-                              ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      key: const ValueKey('home-batch-button'),
+                                      onPressed: controller.isBusy
+                                          ? null
+                                          : () => _startContinuousCapture(
+                                              context,
+                                            ),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.onPrimary,
+                                        side: BorderSide(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onPrimary
+                                              .withValues(alpha: 0.42),
+                                        ),
+                                      ),
+                                      icon: const Icon(
+                                        Icons.collections_outlined,
+                                      ),
+                                      label: const Text('按箱连拍'),
+                                    ),
+                                  ),
+                                ];
+                                if (constraints.maxWidth < 440) {
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      actions[0],
+                                      const SizedBox(height: AppSpacing.sm),
+                                      actions[2],
+                                    ],
+                                  );
+                                }
+                                return Row(children: actions);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final metrics = [
+                            AppMetricCard(
+                              label: '物品总数',
+                              value: '${controller.items.length}',
+                              icon: Icons.inventory_2_outlined,
+                            ),
+                            AppMetricCard(
+                              label: '待确认',
+                              value: '${controller.pendingQueue.length}',
+                              icon: Icons.pending_actions_outlined,
+                              tint: Theme.of(
+                                context,
+                              ).colorScheme.tertiaryContainer,
+                            ),
+                            AppMetricCard(
+                              label: '分类数量',
+                              value: '${stats.categories}',
+                              icon: Icons.category_outlined,
+                              tint: Theme.of(
+                                context,
+                              ).colorScheme.secondaryContainer,
+                            ),
+                          ];
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (
+                                var index = 0;
+                                index < metrics.length;
+                                index++
+                              ) ...[
+                                Expanded(child: metrics[index]),
+                                if (index != metrics.length - 1)
+                                  const SizedBox(width: AppSpacing.sm),
+                              ],
                             ],
+                          );
+                        },
+                      ),
+                      if (controller.latestImage != null) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        _LatestImageCard(image: controller.latestImage!),
+                      ],
+                      const SizedBox(height: AppSpacing.xl),
+                      AppSectionHeader(
+                        title: '待确认队列',
+                        subtitle: controller.isProcessingQueue
+                            ? '后台正在识别，你可以继续拍。'
+                            : '确认后才会写入物品清单。',
+                        action: Wrap(
+                          spacing: AppSpacing.xs,
+                          children: [
+                            if (failedPendingCount > 0)
+                              IconButton.outlined(
+                                key: const ValueKey('home-retry-button'),
+                                onPressed: controller.isBusy
+                                    ? null
+                                    : controller.retryAllFailedPendingItems,
+                                tooltip: '重新识别失败项',
+                                icon: const Icon(Icons.refresh),
+                              ),
+                            FilledButton.tonalIcon(
+                              key: const ValueKey('home-confirm-all-button'),
+                              onPressed:
+                                  controller.isBusy || readyPendingCount == 0
+                                  ? null
+                                  : controller.confirmAllReadyPendingItems,
+                              icon: const Icon(Icons.playlist_add_check),
+                              label: Text('添加 $readyPendingCount 项'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.xs,
+                        runSpacing: AppSpacing.xs,
+                        children: [
+                          AppStatusPill(
+                            label: '共 ${controller.pendingQueue.length} 项',
+                            icon: Icons.layers_outlined,
                           ),
-                          const SizedBox(height: 10),
-                          Text(
-                            '连续拍照会先创建一个箱子，后续这批识别结果都会自动归到这个箱子里。',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.78),
-                                ),
+                          AppStatusPill(
+                            label: '可添加 $readyPendingCount 项',
+                            icon: Icons.check_circle_outline,
+                            tone: AppStatusTone.success,
                           ),
+                          if (failedPendingCount > 0)
+                            AppStatusPill(
+                              label: '失败 $failedPendingCount 项',
+                              icon: Icons.error_outline,
+                              tone: AppStatusTone.danger,
+                            ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _MetricCard(
-                            label: '物品总数',
-                            value: '${controller.items.length}',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _MetricCard(
-                            label: '待确认队列',
-                            value: '${controller.pendingQueue.length}',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _MetricCard(
-                            label: '分类数量',
-                            value: '${stats.categories}',
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    if (controller.latestImage != null)
-                      _LatestImageCard(image: controller.latestImage!),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '待确认队列',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed:
-                              controller.isBusy || failedPendingCount == 0
-                              ? null
-                              : controller.retryAllFailedPendingItems,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('一键重新识别'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      controller.isProcessingQueue
-                          ? '后台正在识别队列中的照片，你可以继续拍。'
-                          : '点开可确认的条目后再入库。',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _QueueStatChip(
-                          icon: Icons.layers_outlined,
-                          label: '共 ${controller.pendingQueue.length} 项',
-                        ),
-                        _QueueStatChip(
-                          icon: Icons.check_circle_outline,
-                          label: '可添加 $readyPendingCount 项',
-                        ),
-                        if (failedPendingCount > 0)
-                          _QueueStatChip(
-                            icon: Icons.error_outline,
-                            label: '失败 $failedPendingCount 项',
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        FilledButton.tonalIcon(
-                          onPressed: controller.isBusy || readyPendingCount == 0
-                              ? null
-                              : controller.confirmAllReadyPendingItems,
-                          icon: const Icon(
-                            Icons.playlist_add_check_circle_outlined,
-                          ),
-                          label: const Text('全部添加'),
-                        ),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
               sliver: controller.pendingQueue.isEmpty
                   ? const SliverToBoxAdapter(child: _EmptyPendingState())
                   : SliverList.builder(
@@ -250,23 +297,32 @@ class HomePage extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final item = controller.pendingQueue[index];
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                           child: _PendingItemCard(item: item),
                         );
                       },
                     ),
             ),
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: Text(
-                  '最近入库',
-                  style: Theme.of(context).textTheme.titleLarge,
+              child: AppContent(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.sm,
+                  ),
+                  child: const AppSectionHeader(title: '最近入库'),
                 ),
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                0,
+                AppSpacing.md,
+                AppSpacing.xl,
+              ),
               sliver: controller.items.isEmpty
                   ? const SliverToBoxAdapter(child: _EmptyState())
                   : SliverList.builder(
@@ -274,7 +330,7 @@ class HomePage extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final item = controller.items[index];
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                           child: _RecentItemCard(item: item),
                         );
                       },
@@ -507,78 +563,6 @@ class _CreateCaptureBoxDialogState extends State<_CreateCaptureBoxDialog> {
       return;
     }
     Navigator.of(context).pop(value);
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-        child: SizedBox(
-          height: 92,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: Theme.of(context).textTheme.bodyMedium,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.bottomLeft,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      value,
-                      style: Theme.of(context).textTheme.headlineSmall,
-                      maxLines: 1,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _QueueStatChip extends StatelessWidget {
-  const _QueueStatChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: AppTheme.ink),
-          const SizedBox(width: 6),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
-    );
   }
 }
 

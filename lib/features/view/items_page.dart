@@ -6,6 +6,7 @@ import '../../app/theme/app_theme.dart';
 import '../../domain/entities/export_format.dart';
 import '../../domain/entities/export_grouping.dart';
 import '../../domain/entities/item_record.dart';
+import '../../shared/widgets/app_ui.dart';
 import '../../shared/widgets/local_image_frame.dart';
 import '../items/item_detail_page.dart';
 import '../shell/app_controller.dart';
@@ -54,102 +55,129 @@ class _ItemsPageState extends State<ItemsPage> {
           key: const ValueKey('items-page'),
           slivers: [
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            isSelecting ? '已选择 ${_selectedIds.length} 件' : '视图',
-                            style: Theme.of(context).textTheme.headlineSmall,
+              child: AppContent(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AppPageHeader(
+                        eyebrow: '物品清单',
+                        title: isSelecting
+                            ? '已选择 ${_selectedIds.length} 件'
+                            : '找到每一样东西。',
+                        subtitle: '${filtered.length} 件匹配 · 长按条目可批量选择',
+                        trailing: isSelecting
+                            ? Wrap(
+                                spacing: AppSpacing.xs,
+                                children: [
+                                  IconButton(
+                                    onPressed: () =>
+                                        setState(_selectedIds.clear),
+                                    tooltip: '取消选择',
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                  IconButton.filledTonal(
+                                    onPressed: controller.isBusy
+                                        ? null
+                                        : () => _deleteSelected(context),
+                                    tooltip: '删除所选',
+                                    icon: const Icon(Icons.delete_outline),
+                                  ),
+                                ],
+                              )
+                            : PopupMenuButton<String>(
+                                tooltip: '更多操作',
+                                onSelected: (value) {
+                                  if (value == 'export') {
+                                    _showExportSheet(context, filtered);
+                                  } else if (value == 'delete') {
+                                    _deleteAllFiltered(context, filtered);
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'export',
+                                    child: ListTile(
+                                      leading: Icon(Icons.ios_share_outlined),
+                                      title: Text('导出当前结果'),
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    enabled:
+                                        filtered.isNotEmpty &&
+                                        !controller.isBusy,
+                                    child: const ListTile(
+                                      leading: Icon(
+                                        Icons.delete_sweep_outlined,
+                                      ),
+                                      title: Text('删除筛选结果'),
+                                    ),
+                                  ),
+                                ],
+                                child: const Icon(Icons.more_horiz),
+                              ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      AppSurface(
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        child: TextField(
+                          key: const ValueKey('items-search-field'),
+                          onChanged: (value) => setState(() => _query = value),
+                          decoration: const InputDecoration(
+                            hintText: '搜索名称、分类、房间或箱号',
+                            prefixIcon: Icon(Icons.search),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            fillColor: Colors.transparent,
                           ),
                         ),
-                        if (isSelecting) ...[
-                          IconButton(
-                            onPressed: () => setState(_selectedIds.clear),
-                            icon: const Icon(Icons.close),
-                            tooltip: '取消选择',
-                          ),
-                          IconButton.filledTonal(
-                            onPressed: controller.isBusy
-                                ? null
-                                : () => _deleteSelected(context),
-                            icon: const Icon(Icons.delete_outline),
-                            tooltip: '删除所选',
-                          ),
-                        ] else
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed:
-                                    controller.isBusy || filtered.isEmpty
-                                        ? null
-                                        : () => _deleteAllFiltered(
-                                              context,
-                                              filtered,
-                                            ),
-                                icon: const Icon(Icons.delete_sweep_outlined),
-                                label: const Text('全部删除'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFFB33A3A),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton.icon(
-                                onPressed: controller.isBusy
-                                    ? null
-                                    : () => _showExportSheet(context, filtered),
-                                icon: const Icon(Icons.ios_share_outlined),
-                                label: const Text('导出'),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '按分类、名称、房间快速查看已经确认入库的物品，并导出当前结果。',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 18),
-                    TextField(
-                      onChanged: (value) => setState(() => _query = value),
-                      decoration: const InputDecoration(
-                        hintText: '搜索名称、分类、房间或箱号',
-                        prefixIcon: Icon(Icons.search),
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      height: 40,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: categories
-                            .map(
-                              (category) => Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: FilterChip(
-                                  label: Text(category),
-                                  selected: category == _selectedCategory,
-                                  onSelected: (_) => setState(
-                                    () => _selectedCategory = category,
+                      const SizedBox(height: AppSpacing.sm),
+                      SizedBox(
+                        height: 44,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: categories
+                              .map(
+                                (category) => Padding(
+                                  padding: const EdgeInsets.only(
+                                    right: AppSpacing.xs,
+                                  ),
+                                  child: FilterChip(
+                                    label: Text(category),
+                                    selected: category == _selectedCategory,
+                                    onSelected: (_) => setState(
+                                      () => _selectedCategory = category,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            )
-                            .toList(),
+                              )
+                              .toList(),
+                        ),
                       ),
-                    ),
-                  ],
+                      /* The old text description was removed in favor of the
+                       compact header and visible search affordance. */
+                      const SizedBox.shrink(),
+                    ],
+                  ),
                 ),
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                0,
+                AppSpacing.md,
+                AppSpacing.xl,
+              ),
               sliver: filtered.isEmpty
                   ? const SliverToBoxAdapter(child: _EmptyView())
                   : SliverList.builder(
@@ -157,7 +185,7 @@ class _ItemsPageState extends State<ItemsPage> {
                       itemBuilder: (context, index) {
                         final item = filtered[index];
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                           child: _ItemCard(
                             item: item,
                             isSelected: _selectedIds.contains(item.id),
@@ -486,128 +514,122 @@ class _ItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final parameterSummary = item.parameterSummary();
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: () {
-          if (isSelecting) {
-            onSelectionChanged(!isSelected);
-            return;
-          }
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => ItemDetailPage(item: item)));
-        },
-        onLongPress: () => onSelectionChanged(true),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _ItemThumbnail(item: item),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        PopupMenuButton<ItemStatus>(
-                          tooltip: '快速编辑状态',
-                          onSelected: (status) => controller.updateItem(
-                            item.copyWith(
-                              status: status,
-                              updatedAt: DateTime.now(),
-                            ),
-                          ),
-                          itemBuilder: (context) => [
-                            for (final status in ItemStatus.values)
-                              PopupMenuItem<ItemStatus>(
-                                value: status,
-                                child: Text(status.label),
-                              ),
-                          ],
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.bolt_outlined, size: 16),
-                                const SizedBox(width: 6),
-                                Text(
-                                  item.status.label,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                                const SizedBox(width: 2),
-                                const Icon(Icons.expand_more, size: 16),
-                              ],
-                            ),
-                          ),
-                        ),
-                        Chip(label: Text(item.category)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _DataPill(
-                          icon: Icons.home_work_outlined,
-                          label: item.room.ifEmpty('未分配房间'),
-                        ),
-                        _DataPill(
-                          icon: Icons.inventory_outlined,
-                          label: item.box.ifEmpty('未分配箱号'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      item.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    if (parameterSummary.isNotEmpty) ...[
-                      const SizedBox(height: 8),
+    return Semantics(
+      button: true,
+      label: '${item.name}，${item.category}',
+      hint: '点击查看详情，长按进入批量选择',
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          onTap: () {
+            if (isSelecting) {
+              onSelectionChanged(!isSelected);
+              return;
+            }
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ItemDetailPage(item: item)),
+            );
+          },
+          onLongPress: () => onSelectionChanged(true),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _ItemThumbnail(item: item),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        parameterSummary,
+                        item.name,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.black.withValues(alpha: 0.62),
-                        ),
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          PopupMenuButton<ItemStatus>(
+                            tooltip: '快速编辑状态',
+                            onSelected: (status) => controller.updateItem(
+                              item.copyWith(
+                                status: status,
+                                updatedAt: DateTime.now(),
+                              ),
+                            ),
+                            itemBuilder: (context) => [
+                              for (final status in ItemStatus.values)
+                                PopupMenuItem<ItemStatus>(
+                                  value: status,
+                                  child: Text(status.label),
+                                ),
+                            ],
+                            child: AppStatusPill(
+                              label: item.status.label,
+                              icon: Icons.bolt_outlined,
+                              tone: item.status == ItemStatus.cataloged
+                                  ? AppStatusTone.success
+                                  : item.status == ItemStatus.pending
+                                  ? AppStatusTone.warning
+                                  : AppStatusTone.neutral,
+                            ),
+                          ),
+                          Chip(label: Text(item.category)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _DataPill(
+                            icon: Icons.home_work_outlined,
+                            label: item.room.ifEmpty('未分配房间'),
+                          ),
+                          _DataPill(
+                            icon: Icons.inventory_outlined,
+                            label: item.box.ifEmpty('未分配箱号'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        item.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      if (parameterSummary.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          parameterSummary,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              if (isSelecting) ...[
-                const SizedBox(width: 8),
-                Checkbox(
-                  value: isSelected,
-                  onChanged: (value) => onSelectionChanged(value ?? false),
-                ),
+                if (isSelecting) ...[
+                  const SizedBox(width: 8),
+                  Checkbox(
+                    value: isSelected,
+                    onChanged: (value) => onSelectionChanged(value ?? false),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -646,6 +668,7 @@ class _ItemThumbnail extends StatelessWidget {
       width: 78,
       height: 78,
       borderRadius: BorderRadius.circular(20),
+      semanticLabel: '${item.name}缩略图',
     );
   }
 }
@@ -661,7 +684,7 @@ class _DataPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.04),
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Row(
