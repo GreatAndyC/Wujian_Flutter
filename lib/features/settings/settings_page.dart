@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../domain/entities/ai_provider_preset.dart';
 import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/app_settings_profile.dart';
 import '../../domain/entities/storage_usage_summary.dart';
 import '../../domain/entities/token_usage_stats.dart';
+import '../../shared/app_links.dart';
 import '../../shared/widgets/app_ui.dart';
 import '../shell/app_controller.dart';
 import '../shell/app_scope.dart';
@@ -267,11 +269,38 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(
+                title: '关于与隐私',
+                subtitle: '了解物见如何处理本地数据、照片和 AI 识别请求。',
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AppSurface(
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  key: const ValueKey('privacy-policy-entry'),
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: const Text('隐私政策'),
+                  subtitle: const Text('查看数据处理、AI 识别和删除说明'),
+                  trailing: const Icon(Icons.open_in_new_outlined),
+                  onTap: _openPrivacyPolicy,
+                ),
+              ),
             ],
           ),
         );
       },
     );
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    final uri = Uri.parse(appPrivacyPolicyUrl);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法打开隐私政策页面，请检查网络连接。')));
+    }
   }
 
   void _handleControllerChanged() {
