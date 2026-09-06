@@ -2,31 +2,33 @@ import Flutter
 import UIKit
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+@objc class AppDelegate: FlutterAppDelegate {
   private let channelName = "com.wujian.app.icheck/file_saver"
+  lazy var flutterEngine = FlutterEngine(name: "WujianEngine")
+  private var isFlutterConfigured = false
   private var pendingResult: FlutterResult?
   private var pickerDelegate: FileSavePickerDelegate?
-
-  func didInitializeImplicitFlutterEngine(
-    _ engineBridge: FlutterImplicitEngineBridge
-  ) {
-    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    let channel = FlutterMethodChannel(
-      name: channelName,
-      binaryMessenger: engineBridge.applicationRegistrar.messenger()
-    )
-    channel.setMethodCallHandler { [weak self] call, result in
-      self?.handleMethodCall(call, result: result) ?? result(
-        FlutterError(code: "unavailable", message: "App delegate is unavailable.", details: nil)
-      )
-    }
-  }
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  func configureFlutterEngine() {
+    guard !isFlutterConfigured else { return }
+    isFlutterConfigured = true
+
+    let channel = FlutterMethodChannel(
+      name: channelName,
+      binaryMessenger: flutterEngine.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      self?.handleMethodCall(call, result: result) ?? result(
+        FlutterError(code: "unavailable", message: "App delegate is unavailable.", details: nil)
+      )
+    }
   }
 
   fileprivate func completeSave(success: Bool) {

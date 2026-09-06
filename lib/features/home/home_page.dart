@@ -212,7 +212,11 @@ class HomePage extends StatelessWidget {
                             ),
                           ];
                           return Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            // This row lives inside a sliver, whose vertical
+                            // constraints are unbounded. Stretching children
+                            // here asks them to fill an infinite height and
+                            // makes the release build render the page blank.
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               for (
                                 var index = 0;
