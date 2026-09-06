@@ -51,6 +51,45 @@ void main() {
     expect(find.text('拍下来，剩下的交给队列。'), findsOneWidget);
     expect(find.byKey(const ValueKey('home-capture-button')), findsOneWidget);
   });
+
+  testWidgets('主页在手机窄屏（宽 < 440）尺寸下可以正常渲染且不抛出无界约束异常', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final mediaStorage = MediaStorageService();
+    final controller = AppController(
+      settingsRepository: _SettingsRepository(),
+      catalogRepository: _CatalogRepository(),
+      recognitionRepository: _RecognitionRepository(),
+      tokenUsageRepository: _TokenUsageRepository(),
+      pdfExportService: PdfExportService(mediaStorage),
+      excelExportService: ExcelExportService(mediaStorage),
+      markdownExportService: MarkdownExportService(mediaStorage),
+      localFileSaveService: LocalFileSaveService(),
+      mediaStorageService: mediaStorage,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme(),
+        home: Scaffold(
+          body: AppScope(
+            controller: controller,
+            child: const HomePage(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('物见工作区'), findsOneWidget);
+    expect(find.text('拍下来，剩下的交给队列。'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-capture-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-batch-button')), findsOneWidget);
+  });
 }
 
 class _SettingsRepository implements SettingsRepository {

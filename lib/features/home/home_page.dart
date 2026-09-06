@@ -118,68 +118,68 @@ class HomePage extends StatelessWidget {
                             const SizedBox(height: AppSpacing.lg),
                             LayoutBuilder(
                               builder: (context, constraints) {
-                                final actions = [
-                                  Expanded(
-                                    child: FilledButton.icon(
-                                      key: const ValueKey(
-                                        'home-capture-button',
-                                      ),
-                                      onPressed: controller.isBusy
-                                          ? null
-                                          : () => _openCamera(context),
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: Theme.of(
-                                          context,
-                                        ).colorScheme.onPrimary,
-                                        foregroundColor: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                      ),
-                                      icon: const Icon(
-                                        Icons.camera_alt_outlined,
-                                      ),
-                                      label: const Text('拍一张'),
-                                    ),
+                                final captureButton = FilledButton.icon(
+                                  key: const ValueKey(
+                                    'home-capture-button',
                                   ),
-                                  const SizedBox(width: AppSpacing.sm),
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      key: const ValueKey('home-batch-button'),
-                                      onPressed: controller.isBusy
-                                          ? null
-                                          : () => _startContinuousCapture(
-                                              context,
-                                            ),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: Theme.of(
+                                  onPressed: controller.isBusy
+                                      ? null
+                                      : () => _openCamera(context),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimary,
+                                    foregroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.camera_alt_outlined,
+                                  ),
+                                  label: const Text('拍一张'),
+                                );
+                                final batchButton = OutlinedButton.icon(
+                                  key: const ValueKey('home-batch-button'),
+                                  onPressed: controller.isBusy
+                                      ? null
+                                      : () => _startContinuousCapture(
                                           context,
-                                        ).colorScheme.onPrimary,
-                                        side: BorderSide(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onPrimary
-                                              .withValues(alpha: 0.42),
                                         ),
-                                      ),
-                                      icon: const Icon(
-                                        Icons.collections_outlined,
-                                      ),
-                                      label: const Text('按箱连拍'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimary,
+                                    side: BorderSide(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimary
+                                          .withValues(alpha: 0.42),
                                     ),
                                   ),
-                                ];
+                                  icon: const Icon(
+                                    Icons.collections_outlined,
+                                  ),
+                                  label: const Text('按箱连拍'),
+                                );
                                 if (constraints.maxWidth < 440) {
                                   return Column(
+                                    mainAxisSize: MainAxisSize.min,
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
-                                      actions[0],
+                                      captureButton,
                                       const SizedBox(height: AppSpacing.sm),
-                                      actions[2],
+                                      batchButton,
                                     ],
                                   );
                                 }
-                                return Row(children: actions);
+                                return Row(
+                                  children: [
+                                    Expanded(child: captureButton),
+                                    const SizedBox(width: AppSpacing.sm),
+                                    Expanded(child: batchButton),
+                                  ],
+                                );
                               },
                             ),
                           ],
